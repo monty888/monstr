@@ -69,10 +69,14 @@ class Keys:
     @staticmethod
     def is_bech32_key(key:str):
         ret = False
+        key = key.lower()
         if key.startswith('npub') or key.startswith('npriv'):
-            key = key.replace('npub', '').replace('npriv', '')
-            # more checks here....
-            ret = True
+            try:
+                Keys.bech32_to_hex(key)
+                ret = True
+            except:
+                pass
+
         return ret
 
     @staticmethod
@@ -82,14 +86,14 @@ class Keys:
         return bech32.bech32_encode(prefix, data)
 
     @staticmethod
-    def bech32_to_hex(key:str):
+    def bech32_to_hex(key: str):
         # should be the reverese of hex_to_bech32...
         as_int = bech32.bech32_decode(key)
         data = bech32.convertbits(as_int[1], 5, 8)
         return ''.join([hex(i).replace('0x', '').rjust(2,'0') for i in data][:32])
 
     @staticmethod
-    def hex_key(key:str)-> str:
+    def hex_key(key: str)-> str:
         """
         :param key: can be hex/npub/nsec and you'll get back the hex rep
         if doesn't look like valid key then None will be returned
@@ -101,6 +105,23 @@ class Keys:
         elif Keys.is_bech32_key(key):
             ret = Keys.bech32_to_hex(key)
 
+        return ret
+
+    @staticmethod
+    def get_key(key: str):
+        """
+        returns a key object from the given str, npub/nsec will be used correctly if hex it'll only be used as a
+        public key.
+        where npub/hex is supplied the Keys objects will return None for private_key methods
+        if the key str doesn't look valid None is returned
+        """
+        ret = None
+        key = key.lower()
+        if Keys.is_valid_key(key):
+            if key.startswith('npriv'):
+                ret = Keys(priv_k=key)
+            else:
+                ret = Keys(pub_k=key)
         return ret
 
     def __init__(self, priv_k: str=None, pub_k: str=None):
@@ -125,6 +146,7 @@ class Keys:
             self._priv_k = k_pair['priv_k']
             self._pub_k = k_pair['pub_k']
         elif priv_k:
+            print('check', priv_k)
             if Keys.is_bech32_key(priv_k):
                 if priv_k.startswith('npub'):
                     raise Exception('attempt to use npub as private key!!')
