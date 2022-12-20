@@ -40,31 +40,123 @@ class Keys:
 
         return {
             'priv_k': pk.serialize(),
-            # note pub_k has 02 prefix that you'll probablly want to remove
-            'pub_k': pk.pubkey.serialize(compressed=True).hex()
+            # get rid of 02 prefix that is assumed in nostr
+            'pub_k': pk.pubkey.serialize(compressed=True).hex()[2:]
         }
 
     @staticmethod
-    def is_key(key_str):
+    def is_valid_key(key:str):
         """
-        check that the string looks like a valid nostr pubkey in hex format
+            returns true if key is any of hex/npub/nsec and looks correct
+        """
+        return Keys.is_hex_key(key) or Keys.is_bech32_key(key)
+
+    @staticmethod
+    def is_hex_key(key:str):
+        """
+            returns true if looks like valid hex string for nostr key its not possible to tell if priv/pub
         """
         ret = False
-        if len(key_str) == 64:
+        if len(key) == 64:
             # and also hex, will throw otherwise
             try:
-                bytearray.fromhex(key_str)
+                bytearray.fromhex(key)
                 ret = True
             except:
                 pass
         return ret
 
     @staticmethod
-    def bech32(key_str: str, prefix='npub'):
+    def is_bech32_key(key:str):
+        ret = False
+        if key.startswith('npub') or key.startswith('npriv'):
+            key = key.replace('npub', '').replace('npriv', '')
+            # more checks here....
+            ret = True
+        return ret
+
+    @staticmethod
+    def hex_to_bech32(key_str: str, prefix='npub'):
         as_int = [int(key_str[i:i+2], 16) for i in range(0, len(key_str), 2)]
         data = bech32.convertbits(as_int, 8, 5)
-        return bech32.bech32_encode('npub', data)
+        return bech32.bech32_encode(prefix, data)
 
+    @staticmethod
+    def bech32_to_hex(key:str):
+        # should be the reverese of hex_to_bech32...
+        as_int = bech32.bech32_decode(key)
+        data = bech32.convertbits(as_int[1], 5, 8)
+        return ''.join([hex(i).replace('0x', '').rjust(2,'0') for i in data][:32])
+
+    @staticmethod
+    def hex_key(key:str)-> str:
+        """
+        :param key: can be hex/npub/nsec and you'll get back the hex rep
+        if doesn't look like valid key then None will be returned
+        :return:
+        """
+        ret = None
+        if Keys.is_hex_key(key):
+            ret = key
+        elif Keys.is_bech32_key(key):
+            ret = Keys.bech32_to_hex(key)
+
+        return ret
+
+    def __init__(self, priv_k: str=None, pub_k: str=None):
+        """
+        :param priv_k: hex/nsec
+        :param pub_k: hex/npub
+
+        If no keys supplied then a new key pair will be generated
+        supplied keys can be in either hex/npub/nsec format, internally we keep then as hex
+        if both pub_k and priv_k are supplied then the pub_k will be checked to see that it matches but doesn't seem
+        any reason while you'd supply both
+        if no priv_k is supplied the private key methods will just return None
+        """
+
+        # internal hex format
+        self._priv_k= None
+        self._pub_k = None
+
+        # nothing supplied generate new keys
+        if priv_k is None and pub_k is None:
+            k_pair = self.get_new_key_pair()
+            self._priv_k = k_pair['priv_k']
+            self._pub_k = k_pair['pub_k']
+        elif priv_k:
+            if Keys.is_bech32_key(priv_k):
+                if priv_k.startswith('npub'):
+                    raise Exception('attempt to use npub as private key!!')
+                priv_k = Keys.hex_key(priv_k)
+            k_pair = self.get_new_key_pair(priv_k)
+            if pub_k and k_pair[pub_k] != pub_k:
+                raise Exception('attempt to create key with mismatched keypair, maybe just don\'t supply the pub_k?')
+            self._pub_k = k_pair['pub_k']
+            self._priv_k = k_pair['priv_k']
+        # only pub_k supplied, won't be able to sign
+        else:
+            self._pub_k = Keys.hex_key(pub_k)
+            if not self._pub_k:
+                raise Exception('pub_k does\'t look like a valid nostr key - %s' % pub_k)
+
+    def private_key_hex(self):
+        return self._priv_k
+
+    def private_key_bech32(self):
+        ret = None
+        if self._priv_k:
+            ret = self.hex_to_bech32(self._priv_k, 'npriv')
+        return ret
+
+    def public_key_hex(self):
+        return self._pub_k
+
+    def public_key_bech32(self):
+        ret = None
+        if self._pub_k:
+            ret = self.hex_to_bech32(self._pub_k)
+        return ret
 
 class SharedEncrypt:
 

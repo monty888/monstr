@@ -6,7 +6,6 @@
 import logging
 import time
 import signal
-
 from nostr.relay.relay import Relay, event_route
 from nostr.event.persist import RelayMemoryEventStore
 from nostr.client.client import Client
@@ -21,7 +20,9 @@ def run_relay():
     def stop():
         r.end()
 
-    r = Relay(store=RelayMemoryEventStore())
+    r = Relay(store=RelayMemoryEventStore(), enable_nip15=True)
+
+    # adds a helper route so we can get events over http by id
     r.app.route('/e', callback=event_route(r))
 
     Thread(target=start).start()

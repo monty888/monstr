@@ -472,7 +472,6 @@ class Client:
             self._state = RunState.running
             while self._run:
                 try:
-                    print('con loop')
                     get_con()
                 except BrokenPipeError as be:
                     print('Client::my_thread %s\n check that connection details %s are correct' % (be, self._url))
@@ -525,7 +524,6 @@ class Client:
 
     def wait_connect(self):
         while not self.connected:
-            print('waiting connection...')
             time.sleep(0.1)
 
     # so where appropriate can use with syntax, exit function probably needs to do more...
