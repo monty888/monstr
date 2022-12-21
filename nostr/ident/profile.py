@@ -610,7 +610,7 @@ class ContactList:
             if c_tag[0] == 'p' and len(c_tag) > 1:
                 contact_pub_k = c_tag[1]
                 # check the key looks correct
-                if Keys.is_key(contact_pub_k):
+                if Keys.is_hex_key(contact_pub_k):
                     # TODO: relay and pet_name to be added
                     n_contact = Contact(owner_pub_k=evt.pub_key,
                                         updated_at=evt.created_at_ticks,
