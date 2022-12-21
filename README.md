@@ -8,7 +8,8 @@ python code for working with nostr
 * Keys for working with and converting between hex/npub/nsec
 
 # install
-> git clone https://github.com/monty888/monstr.git   
+> git clone https://github.com/monty888/monstr.git  
+> cd monstr  
 > python3 -m venv venv  
 > source venv/bin/activate  
 > pip install -r requirements.txt  

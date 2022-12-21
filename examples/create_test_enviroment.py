@@ -6,7 +6,7 @@
 import logging
 import time
 import signal
-from nostr.relay.relay import Relay, event_route
+from nostr.relay.relay import Relay, event_route, filter_route
 from nostr.event.persist import RelayMemoryEventStore
 from nostr.client.client import Client
 from nostr.event.event import Event
@@ -24,6 +24,8 @@ def run_relay():
 
     # adds a helper route so we can get events over http by id
     r.app.route('/e', callback=event_route(r))
+    # more flexible req like route
+    r.app.route('/req', callback=filter_route(r))
 
     Thread(target=start).start()
 
@@ -60,7 +62,7 @@ def populate_relay(pub_ks, dest_relay: str, src_relay='wss://relay.damus.io'):
             'authors': pub_ks
         })
 
-    # test note
+    # text notes
     with Client(src_relay) as src_client:
         # get meta/profile data for given pub_ks
         notes = src_client.query(filters={

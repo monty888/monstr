@@ -434,3 +434,72 @@ def event_route(r: Relay):
 
     return the_route
 
+
+def filter_route(r: Relay):
+    """
+        similar to the id route but more flexible with a small subset of
+        nostr filter availabe as if doing a REQ to the relay directly
+
+            relay.app.route('/req', callback=route_method(relay))
+            http://host:port/req?kinds=0?authors=some_key
+    """
+    def the_route():
+
+        def _get_param(name: str, mutiple=False, numeric=False):
+
+            def _make_numeric(val):
+                n_val = None
+                try:
+                    n_val = int(val)
+                except Exception as e:
+                    pass
+
+                return n_val
+
+            field_vals = None
+            if name in request.query:
+                r_val = request.query[name]
+                if mutiple:
+                    r_val = r_val.split(',')
+                else:
+                    r_val = [r_val]
+
+                if numeric:
+                    r_val = [_make_numeric(r_val) for r_val in r_val if _make_numeric(r_val) is not None]
+
+                if r_val:
+                    if mutiple:
+                        field_vals = r_val
+                    else:
+                        field_vals = r_val[0]
+
+            return field_vals
+
+        limit = _get_param('limit', mutiple=False, numeric=True)
+        if limit is None or limit > 100:
+            limit = 100
+
+        authors = _get_param('authors', mutiple=True, numeric=False)
+        kinds = _get_param('kinds', mutiple=True, numeric=True)
+        ids = _get_param('ids', mutiple=True, numeric=False)
+
+        filter = {
+            'limit': limit
+        }
+        if authors:
+            filter['authors'] = authors
+        if kinds:
+            filter['kinds'] = kinds
+        if ids:
+            filter['ids'] = ids
+
+        evts = r.store.get_filter(filter)
+        ret = None
+        if evts:
+            ret = {
+                'events': evts
+            }
+
+        return ret
+
+    return the_route

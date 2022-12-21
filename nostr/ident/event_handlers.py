@@ -14,7 +14,6 @@ from .persist import ProfileType
 from nostr.util import util_funcs
 from nostr.event.event import Event
 
-
 class ProfileEventHandler:
     """
         access profile, contacts through here rather than via the store, at the moment we keep everything in memory
