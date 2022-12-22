@@ -4,11 +4,11 @@
 
 """
 import sys
-from nostr.client.client import Client
-from nostr.client.event_handlers import EventHandler
-from nostr.event.event import Event
-from nostr.util import util_funcs
-from nostr.encrypt import Keys
+from monstr.client.client import Client
+from monstr.client.event_handlers import EventHandler
+from monstr.event.event import Event
+from monstr.util import util_funcs
+from monstr.encrypt import Keys
 
 def get_notes(for_key, relay='ws://localhost:8888/'):
     print('getting text(1) kind notes for key: %s from %s' % (for_key,

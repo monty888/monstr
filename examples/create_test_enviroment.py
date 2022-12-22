@@ -6,11 +6,11 @@
 import logging
 import time
 import signal
-from nostr.relay.relay import Relay, event_route, filter_route
-from nostr.event.persist import RelayMemoryEventStore
-from nostr.client.client import Client
-from nostr.event.event import Event
-from nostr.ident.profile import ContactList
+from monstr.relay.relay import Relay, event_route, filter_route
+from monstr.event.persist import RelayMemoryEventStore
+from monstr.client.client import Client
+from monstr.event.event import Event
+from monstr.ident.profile import ContactList
 from threading import Thread
 
 

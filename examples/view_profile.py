@@ -9,10 +9,10 @@ from datetime import datetime
 from cachetools import TTLCache
 from gevent.pywsgi import WSGIServer
 from bottle import Bottle, request
-from nostr.client.client import ClientPool, Client
-from nostr.encrypt import Keys
-from nostr.event.event import Event
-from nostr.ident.profile import Profile
+from monstr.client.client import ClientPool, Client
+from monstr.encrypt import Keys
+from monstr.event.event import Event
+from monstr.ident.profile import Profile
 
 class ServerError(Exception):
     pass
@@ -43,8 +43,7 @@ class NetworkedProfileEventHandler:
                     (p.public_key in self._cache and
                      self._cache[p.public_key].update_at < p.update_at):
                 self._cache[p.public_key] = p
-                logging.debug(logging.INFO,
-                              'NetworkedProfileEventHandler::do_event cache updated pub_k - %s' % p.public_key)
+                logging.info('NetworkedProfileEventHandler::do_event cache updated pub_k - %s' % p.public_key)
 
     def get_profile(self, pub_k):
         if self._cache is not None and pub_k in self._cache:
@@ -103,7 +102,7 @@ class MetaServer:
     def view_profile_route(self):
         pub_k = request.query.pub_k
         if not Keys.is_hex_key(pub_k):
-            raise ServerError('%s - doesn\'t look like a nostr pub_k' % pub_k)
+            raise ServerError('%s - doesn\'t look like a monstr pub_k' % pub_k)
 
         p = self._my_peh.get_profile(pub_k)
         return p.as_dict()

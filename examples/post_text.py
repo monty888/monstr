@@ -3,9 +3,9 @@
 """
 import sys
 import logging
-from nostr.encrypt import Keys
-from nostr.client.client import Client
-from nostr.event.event import Event
+from monstr.encrypt import Keys
+from monstr.client.client import Client
+from monstr.event.event import Event
 
 def prompt_post(keys:Keys, relay='ws://localhost:8888'):
     """
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     else:
         for_key = args[0]
         if not Keys.is_bech32_key(for_key):
-            print('%s doesn\'t look like a valid nostr key' % for_key)
+            print('%s doesn\'t look like a valid monstr key' % for_key)
             sys.exit(2)
         if for_key.startswith('npub'):
             print('a private key is required for posting')
