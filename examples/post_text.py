@@ -45,7 +45,7 @@ if __name__ == "__main__":
     else:
         for_key = args[0]
         if not Keys.is_bech32_key(for_key):
-            print('%s doesn\'t look like a valid monstr key' % for_key)
+            print('%s doesn\'t look like a valid monstr key, only npub/nsec accepted' % for_key)
             sys.exit(2)
         if for_key.startswith('npub'):
             print('a private key is required for posting')

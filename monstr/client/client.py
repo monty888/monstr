@@ -19,7 +19,7 @@ from json import JSONDecodeError
 from datetime import datetime
 from monstr.util import util_funcs
 from monstr.event.event import Event
-from monstr.client.event_handlers import EventTimeHandler, FileEventHandler
+from monstr.client.event_handlers import FileEventHandler
 from threading import Thread, BoundedSemaphore
 from enum import Enum
 
@@ -42,7 +42,7 @@ class Client:
     @classmethod
     def relay_events_to_file(cls, relay_url, filename, filter=None):
         """
-
+        FIX this is should just use EOSE, the client will emulate eose if it doesn't exit
         subscribes to given relay and outputs to file all events matching the filter then exits
         because its a subscription rather query that will return everything the critera we use to stop
         is either since an event that is has created_at>= when we started or if we didn't see an event for 10s
@@ -150,7 +150,7 @@ class Client:
             info_url = self._url.replace('ws:','http:').replace('wss:', 'https:')
             response = requests.get(info_url,
                                     headers={
-                                        'Accept': 'application/monstr+json'
+                                        'Accept': 'application/nostr+json'
                                     })
             if response.status_code == 200:
                 try:
@@ -212,7 +212,6 @@ class Client:
             'start_time': datetime.now(),
             'last_event': None
         }
-
         if not self._relay_supports_eose() and self._emulate_eose:
             logging.debug('emulating EOSE for sub_id %s' % sub_id)
             def my_emulate():
@@ -398,7 +397,7 @@ class Client:
                 the_evt = Event.from_JSON(message[2])
                 for c_handler in self._subs[sub_id]['handlers']:
                     try:
-                        c_handler.do_event(sub_id, the_evt, self._url)
+                        c_handler.do_event(self, sub_id, the_evt)
                     except Exception as e:
                         logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from monstr.ident.event_handlers import ProfileEventHandler
-
+    from monstr.client.client import Client
 
 from monstr.ident.profile import ProfileList, Profile, Contact, ContactList
 from abc import ABC, abstractmethod
@@ -20,6 +20,7 @@ from threading import BoundedSemaphore
 from monstr.encrypt import SharedEncrypt
 from monstr.util import util_funcs
 from monstr.event.event import Event
+
 
 class EventAccepter(ABC):
 
@@ -80,7 +81,7 @@ class EventHandler(ABC):
         return ret
 
     @abstractmethod
-    def do_event(self, sub_id, evt: Event, relay):
+    def do_event(self, the_client: Client, sub_id, evt: Event):
         """
         if self.accept_event(evt):
             do_something
@@ -108,12 +109,12 @@ class PrintEventHandler(EventHandler):
     def view_off(self):
         self._view_on = False
 
-    def do_event(self, sub_id, evt: Event, relay):
+    def do_event(self, the_client: Client, sub_id, evt: Event):
         if self._view_on and self.accept_event(evt):
             with self._lock:
-                self.display_func(sub_id, evt, relay)
+                self.display_func(the_client, sub_id, evt)
 
-    def display_func(self, sub_id, evt: Event, relay):
+    def display_func(self, the_client: Client, sub_id, evt: Event):
         # single line basic evt info, override this if you want something more
         profile_name = evt.pub_key
         if self._profile_handler is not None:
@@ -146,7 +147,7 @@ class DecryptPrintEventHandler(PrintEventHandler):
                                                  # note the ext is ignored anyway
                                                  pub_key_hex='02' + pub_key))
 
-    def do_event(self, sub_id, evt, relay):
+    def do_event(self, the_client: Client, sub_id, evt: Event):
         if self._view_on is False:
             return
         do_decrypt = False
@@ -180,7 +181,7 @@ class FileEventHandler:
             with open(self._file_name, 'w'):
                 pass
 
-    def do_event(self, sub_id, evt, relay):
+    def do_event(self, the_client: Client, sub_id, evt: Event):
         # appends to
         with open(self._file_name, "a") as f:
             evt['pubkey'] = evt['pubkey']
@@ -188,13 +189,13 @@ class FileEventHandler:
         logging.debug('FileEventHandler::do_event event appended to file %s' % self._file_name)
 
 
-class EventTimeHandler:
-
-    def __init__(self, callback=None):
-        self._callback = callback
-
-    def do_event(self, sub_id, evt, relay):
-        self._callback(evt['created_at'])
+# class EventTimeHandler:
+#
+#     def __init__(self, callback=None):
+#         self._callback = callback
+#
+#     def do_event(self, the_client: Client, sub_id, evt: Event):
+#         self._callback(evt['created_at'])
 
 
 class RepostEventHandler:
@@ -213,7 +214,7 @@ class RepostEventHandler:
         self._max_dedup = max_dedup
         self._lock = BoundedSemaphore()
 
-    def do_event(self, sub_id, evt: Event, relay):
+    def do_event(self, the_client: Client, sub_id, evt: Event):
         do_send = False
         with self._lock:
             if evt.id not in self._duplicates:
