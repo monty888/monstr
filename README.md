@@ -19,4 +19,9 @@ python code for working with nostr
 Note: developed against python 3.8
 
 # use 
-see /monstr/examples  
+see /monstr/examples
+
+# TODO
+
+Eventually try to work how the ... python packages work, for now just copy in the folder and install the requirements.
+The examples folder is not required.
