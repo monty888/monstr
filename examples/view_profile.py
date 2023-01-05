@@ -43,10 +43,16 @@ class MetaServer:
     def view_profile_route(self):
         pub_k = request.query.pub_k
         if not Keys.is_hex_key(pub_k):
-            raise ServerError('%s - doesn\'t look like a monstr pub_k' % pub_k)
+            raise ServerError('%s - doesn\'t look like a nonstr pub_k' % pub_k)
 
+        ret = {
+            'pub_k': pub_k,
+            'error': 'not found'
+        }
         p = self._my_peh.get_profile(pub_k)
-        return p.as_dict()
+        if p:
+            ret = p.as_dict()
+        return ret
 
     def start(self, host='localhost', port=8080):
         logging.debug('started web server at %s port=%s' % (host, port))
@@ -77,7 +83,7 @@ def start_server(relays):
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    relays = ['ws://localhost:8888/']
+    relays = ['wss://nostr-pub.wellorder.net']
     args = sys.argv[1:]
     if args:
         relays = args[0].split(',')

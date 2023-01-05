@@ -126,7 +126,7 @@ class Profile:
     @property
     def contacts(self) -> ContactList:
         if self._contacts is None:
-            raise Exception('Profile::contacts - load contacts hasn\'t been called yet for contact %s' % self.display_name())
+            raise Exception('Profile::contacts - load contacts hasn\'t been called yet for profile %s' % self.display_name())
         return self._contacts
 
     @contacts.setter

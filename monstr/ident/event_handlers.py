@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 import copy
 from abc import ABC, abstractmethod
-from monstr.ident.profile import Profile, ProfileList, Keys
+from monstr.ident.profile import Profile, ProfileList, Keys, ContactList
 from monstr.event.event import Event
 from monstr.util import util_funcs
 
@@ -153,8 +153,32 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
             # note this means data will be return as quick as your slowest relay...
             emulate_single=True)
 
-        Event.latest_events_only(meta_events, kind=Event.KIND_META)
+        meta_events = Event.latest_events_only(meta_events, kind=Event.KIND_META)
         return [Profile.from_event(evt) for evt in meta_events]
+
+    def _fetch_contacts(self, pub_ks) -> [ContactList]:
+        if not pub_ks:
+            return None
+
+        q = []
+        for c_pub_ks in util_funcs.chunk(pub_ks, 200):
+            q.append(
+                {
+                    'authors': c_pub_ks,
+                    'kinds': [Event.KIND_CONTACT_LIST]
+                }
+            )
+
+        con_events = self._client.query(
+            filters=q,
+            # cache will be updating in do_event
+            do_event=self.do_event,
+            # note this means data will be return as quick as your slowest relay...
+            emulate_single=True)
+
+        Event.latest_events_only(con_events, kind=Event.KIND_CONTACT_LIST)
+
+        return [ContactList.from_event(evt) for evt in con_events]
 
     def get_profile(self, pub_k, create_missing=False):
         ret = super().get_profile(pub_k,
@@ -187,7 +211,19 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
             # add placeholders for any we don't have if createmissing
             # this does't include invalid keys
             if create_missing:
-                ret = ret + [self.create_missing(k) for k in for_keys if k not in self]
+                for k in for_keys:
+                    if k not in self:
+                        n_p = self.create_missing(k)
+                        ret.append(n_p)
+                        self._cache[k] = n_p
 
         return ProfileList(ret)
 
+    def load_contacts(self, p: Profile):
+        p_contacts = self._fetch_contacts(pub_ks=[p.public_key])
+        if p_contacts:
+            p.contacts = p_contacts[0]
+        # couldn't find any?
+        else:
+            p.contacts = ContactList(contacts=[],
+                                     owner_pub_k=p.public_key)

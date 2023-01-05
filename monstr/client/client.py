@@ -451,20 +451,7 @@ class Client:
                                               on_close=self._on_close,
                                               on_ping=self._did_comm,
                                               on_pong=self._did_comm)
-            self._ws.run_forever()  # Set dispatcher to automatic reconnection
-            # self._ws = websocket.create_connection(self._url, timeout=60)
-
-            # rel.signal(2, rel.abort)
-            # rel.dispatch()
-
-        # def monitor_thread():
-        #     while self._run:
-        #         try:
-        #             if self._on_status:
-        #                 self._on_status(self.status)
-        #         except Exception as e:
-        #             logging.debug(e)
-        #         time.sleep(1)
+            self._ws.run_forever(ping_interval=5, ping_timeout=3)  # Set dispatcher to automatic reconnection
 
         def my_thread():
             # Thread(target=monitor_thread).start()
