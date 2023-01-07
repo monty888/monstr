@@ -199,7 +199,8 @@ class Client:
         # make sure handler is list
         if handlers is None:
             handlers = []
-        elif not hasattr(handlers, '__iter__'):
+        # added ClientPool else we end up itering over Clients and thinking they're handlers!
+        elif not hasattr(handlers, '__iter__') or isinstance(handlers, ClientPool):
             handlers = [handlers]
 
         self._subs[sub_id] = {
@@ -317,8 +318,8 @@ class Client:
 
         return ret
 
-    def set_end_stored_events(self, eose_func=None):
-        self._eose_func = eose_func
+    def set_on_eose(self, on_eose):
+        self._eose_func = on_eose
 
     def _on_message(self, ws: websocket.WebSocketApp, message):
         self._reset_status()
@@ -397,6 +398,7 @@ class Client:
                 the_evt = Event.from_JSON(message[2])
                 for c_handler in self._subs[sub_id]['handlers']:
                     try:
+                        print(sub_id, type(c_handler))
                         c_handler.do_event(self, sub_id, the_evt)
                     except Exception as e:
                         logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
@@ -452,6 +454,19 @@ class Client:
                                               on_ping=self._did_comm,
                                               on_pong=self._did_comm)
             self._ws.run_forever(ping_interval=5, ping_timeout=3)  # Set dispatcher to automatic reconnection
+            # self._ws = websocket.create_connection(self._url, timeout=60)
+
+            # rel.signal(2, rel.abort)
+            # rel.dispatch()
+
+        # def monitor_thread():
+        #     while self._run:
+        #         try:
+        #             if self._on_status:
+        #                 self._on_status(self.status)
+        #         except Exception as e:
+        #             logging.debug(e)
+        #         time.sleep(1)
 
         def my_thread():
             # Thread(target=monitor_thread).start()
@@ -722,6 +737,10 @@ class ClientPool:
         for c_client in self:
             c_client.set_on_connect(on_connect)
 
+    def set_on_eose(self, on_eose):
+        for c_client in self:
+            c_client.set_on_eose(on_eose)
+
     def _on_pool_status(self, relay_url, status):
         # the status we return gives each individual relay status at ['relays']
         self._status['relays'][relay_url] = status
@@ -802,6 +821,7 @@ class ClientPool:
         self._state = RunState.stopped
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
+        c_client: Client
         for c_client in self:
             sub_id = c_client.subscribe(sub_id, self, filters)
 
@@ -810,7 +830,6 @@ class ClientPool:
             if not hasattr(handlers, '__iter__'):
                 handlers = [handlers]
             self._handlers[sub_id] = handlers
-
         return sub_id
 
     def query(self, filters=[],
@@ -883,18 +902,19 @@ class ClientPool:
                 except Exception as e:
                     logging.debug(e)
 
-    def do_event(self, sub_id, evt, relay):
+    def do_event(self, client:Client, sub_id:str, evt):
+
         def get_do_event(handler):
             def my_func():
-                handler.do_event(sub_id, evt, relay)
+                handler.do_event(client, sub_id, evt)
             return my_func
 
         # shouldn't be possible...
-        if relay not in self._clients:
-            raise Exception('ClientPool::do_event received event from unexpected relay - %s WTF?!?' % relay)
+        if client.url not in self._clients:
+            raise Exception('ClientPool::do_event received event from unexpected relay - %s WTF?!?' % client.url)
 
         # only do anything if relay read is True
-        if self._clients[relay].read:
+        if self._clients[client.url].read:
             # note no de-duplication is done here, you might see the same event from mutiple relays
             if sub_id in self._handlers:
                 for c_handler in self._handlers[sub_id]:

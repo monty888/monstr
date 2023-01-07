@@ -435,6 +435,74 @@ def event_route(r: Relay):
     return the_route
 
 
+def view_profile_route(r: Relay):
+    """
+    a simple profile view for what we have in the relay
+    :param r:
+    :return:
+    """
+    def the_route():
+        pub_k = request.params.pub_k
+
+        try:
+            if pub_k == '':
+                raise ValueError('pub_k field is required')
+            k = Keys.get_key(pub_k)
+            if k is None:
+                raise ValueError('%s - doesn\'t look like a valid nostr key' % pub_k)
+
+            evts = r.store.get_filter({
+                'authors': [k.public_key_hex()],
+                'kinds': [Event.KIND_META]
+            })
+
+            evts = Event.latest_events_only([Event.from_JSON(c_evt) for c_evt in evts],
+                                            kind=Event.KIND_META)
+
+
+
+
+            if evts:
+                p_attrs = json.loads(evts[0].content)
+                name = '-'
+                if 'name' in p_attrs:
+                    name = p_attrs['name']
+
+                about = '-'
+                if 'about' in p_attrs:
+                    about = p_attrs['about']
+
+                picture = ''
+                if 'picture' in p_attrs:
+                    picture = """
+                        <img src='%s' />
+                    """ % p_attrs['picture']
+
+                ret = """
+                    <HTML>
+                        <b>%s</b></br>
+                        Name: %s <br>
+                        About: %s <br>
+                        %s    
+                    </HTML>'
+                """ % (k.public_key_hex(),
+                       name,
+                       about,
+                       picture)
+
+            else:
+                ret = '%s no meta held on relay' % k.public_key_hex()
+
+        except ValueError as ve:
+            ret = str(ve)
+        except JSONDecodeError as je:
+            ret = str(je)
+
+        return ret
+
+    return the_route
+
+
 def filter_route(r: Relay):
     """
         similar to the id route but more flexible with a small subset of
