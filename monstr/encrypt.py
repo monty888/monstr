@@ -70,7 +70,7 @@ class Keys:
     def is_bech32_key(key:str):
         ret = False
         key = key.lower()
-        if key.startswith('npub') or key.startswith('npriv'):
+        if key.startswith('npub') or key.startswith('nsec'):
             try:
                 Keys.bech32_to_hex(key)
                 ret = True
@@ -118,7 +118,7 @@ class Keys:
         ret = None
         key = key.lower()
         if Keys.is_valid_key(key):
-            if key.startswith('npriv'):
+            if key.startswith('nsec'):
                 ret = Keys(priv_k=key)
             else:
                 ret = Keys(pub_k=key)
@@ -168,7 +168,7 @@ class Keys:
     def private_key_bech32(self):
         ret = None
         if self._priv_k:
-            ret = self.hex_to_bech32(self._priv_k, 'npriv')
+            ret = self.hex_to_bech32(self._priv_k, 'nsec')
         return ret
 
     def public_key_hex(self):

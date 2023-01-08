@@ -18,7 +18,7 @@ if __name__ == "__main__":
             k = Keys(priv_k=args[0])
         else:
             the_key: str = args[0]
-            if the_key.startswith('npriv'):
+            if the_key.startswith('nsec'):
                 k = Keys(priv_k=the_key)
             else:
                 k = Keys(pub_k=the_key)
