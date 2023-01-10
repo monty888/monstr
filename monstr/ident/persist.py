@@ -61,6 +61,13 @@ class ProfileStoreInterface(ABC):
         """
 
     @abstractmethod
+    def delete_profile(self, keys: Keys) -> Profile:
+        """
+        :param keys:
+        :return:
+        """
+
+    @abstractmethod
     def select_profiles(self, filter={}, profile_type=ProfileType.ANY) -> ProfileList:
         """
         TODO : filter support
@@ -107,31 +114,37 @@ class ProfileStoreInterface(ABC):
 
     # method below should work as long as the abstract methods have been implemented
     def new_profile(self,
-                    name,
+                    profile_name,
                     attrs=None,
-                    priv_key=None) -> Profile:
+                    keys: Keys = None) -> Profile:
         """
         creates a new profile and adds it to the db
         TODO: we should probably check that name+pubkey doesn't already exists
-        :param profile_store:
-        :param priv_key:
-        :param name:
+        :param keys:
+        :param profile_name:
         :param attrs:
         :return:
         """
 
-        keys = Keys.get_new_key_pair(priv_key=priv_key)
-        p = Profile(priv_k=keys['priv_k'],
-                    pub_k=keys['pub_k'][2:],
-                    profile_name=name,
+        # random generate new keys
+        if keys is None:
+            keys = Keys()
+
+        # maybe none if this is just a view profile - we only know the pub_k
+        priv_k = keys.private_key_hex()
+
+        p = Profile(priv_k=priv_k,
+                    pub_k=keys.public_key_hex(),
+                    profile_name=profile_name,
                     attrs=attrs,
                     # update_at as zero so attrs will be update over if we get anything from relay
                     update_at=0)
 
         all = self.select_profiles()
 
-        if all.lookup_profilename(name) or all.lookup_priv_key(keys['priv_k']):
-            raise Exception('Profile:new_profile %s already exists' % name)
+        if all.lookup_profilename(profile_name) or \
+                (priv_k and all.lookup_priv_key(priv_k)):
+            raise Exception('profile of the same name already exists: %s' % profile_name)
 
         self.put_profile(p, is_local=True)
 
@@ -151,15 +164,14 @@ class ProfileStoreInterface(ABC):
         c_p: Profile
         to_output = []
         for c_p in profiles:
-            if c_p.private_key:
-                if names is None or c_p.profile_name in names:
-                    to_output.append([
-                        c_p.private_key,
-                        c_p.public_key,
-                        c_p.profile_name,
-                        json.dumps(c_p.attrs),
-                        c_p.update_at
-                    ])
+            if names is None or c_p.profile_name in names:
+                to_output.append([
+                    c_p.private_key,
+                    c_p.public_key,
+                    c_p.profile_name,
+                    json.dumps(c_p.attrs),
+                    c_p.update_at
+                ])
 
         DataSet([
             'priv_k', 'pub_k', 'profile_name', 'attrs', 'updated_at'
@@ -193,9 +205,11 @@ class ProfileStoreInterface(ABC):
                     attrs=p['attrs'].replace('""', '"').replace('"{', "{").replace('}"', "}"),
                     update_at=util_funcs.date_as_ticks(datetime.now())
                 )
-                self.add(to_add)
+                self.put_profile(to_add,
+                                 is_local=p['priv_k'] != '')
                 ret['added'].add(to_add)
             except Exception as e:
+                print(e)
                 # already exists?
                 ret['existed'].add(to_add)
                 logging.debug('Profile::import_from_file - profile: %s - %s' % (p['profile_name'], e))
@@ -385,7 +399,7 @@ class MemoryProfileStore(ProfileStoreInterface):
         return ret
 
     def _put_profile(self, p: Profile, is_local=False):
-        if is_local or not p.public_key in self._profiles:
+        if is_local or p.public_key not in self._profiles:
             self._profiles[p.public_key] = copy(p)
         else:
             o_p: Profile = self._profiles[p.public_key]
@@ -398,6 +412,16 @@ class MemoryProfileStore(ProfileStoreInterface):
                 self._put_profile(c_p, is_local)
         else:
             self._put_profile(p, is_local)
+
+    def delete_profile(self, keys: Keys) -> Profile:
+        pub_k_hex = keys.public_key_hex()
+        ret = None
+        # if we found the profile we delete and return the profile obj else None
+        if pub_k_hex in self._profiles:
+            ret = self._profiles[pub_k_hex]
+            del self._profiles[pub_k_hex]
+        return ret
+
 
     def _put_contacts(self, contacts: ContactList):
         # TODO: this is only a shallow copy, changing a contact would change it in the store

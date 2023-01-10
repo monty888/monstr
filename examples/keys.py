@@ -27,17 +27,4 @@ if __name__ == "__main__":
     else:
         k = Keys()
 
-    if k.private_key_hex():
-        print('**private**')
-        print('%s%s' % ('hex'.ljust(10),
-                        k.private_key_hex()))
-        print('%s%s' % ('bech32'.ljust(10),
-                        k.private_key_bech32()))
-    print('**public**')
-    print('%s%s' % ('hex'.ljust(10),
-                    k.public_key_hex()))
-    print('%s%s' % ('bech32'.ljust(10),
-                    k.public_key_bech32()))
-
-
-    print(k.is_hex_key('5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'))
+    print(k)

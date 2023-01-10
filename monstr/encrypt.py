@@ -146,7 +146,6 @@ class Keys:
             self._priv_k = k_pair['priv_k']
             self._pub_k = k_pair['pub_k']
         elif priv_k:
-            print('check', priv_k)
             if Keys.is_bech32_key(priv_k):
                 if priv_k.startswith('npub'):
                     raise Exception('attempt to use npub as private key!!')
@@ -179,6 +178,22 @@ class Keys:
         if self._pub_k:
             ret = self.hex_to_bech32(self._pub_k)
         return ret
+
+    def __str__(self):
+        ret = []
+        if self.private_key_hex():
+            ret.append('**private**')
+            ret.append('%s%s' % ('hex'.ljust(10),
+                                 self.private_key_hex()))
+            ret.append('%s%s' % ('bech32'.ljust(10),
+                                 self.private_key_bech32()))
+
+        ret.append('**public**')
+        ret.append('%s%s' % ('hex'.ljust(10),
+                             self.public_key_hex()))
+        ret.append('%s%s' % ('bech32'.ljust(10),
+                             self.public_key_bech32()))
+        return '\n'.join(ret)
 
 class SharedEncrypt:
 

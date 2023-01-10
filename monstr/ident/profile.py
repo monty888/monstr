@@ -147,6 +147,20 @@ class Profile:
     def followed_by(self, follow_keys: []):
         self._followed_by = follow_keys
 
+    # TODO: change so that we store keys as Keys
+    @property
+    def keys(self) -> Keys:
+        if self._priv_k:
+            ret = Keys(priv_k=self._priv_k)
+        else:
+            ret = Keys(pub_k=self._pub_k)
+        return ret
+
+    @keys.setter
+    def keys(self, keys):
+        self._priv_k = keys.private_key_hex()
+        self._pub_k = keys.public_key_hex()
+
     @property
     def name(self):
         ret = None
