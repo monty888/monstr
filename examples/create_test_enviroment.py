@@ -3,47 +3,36 @@
         if you supply some pub keys then it'll
 
 """
-from gevent import monkey
-# important else greenlets may never get to run
-monkey.patch_all()
 import logging
-import time
 import signal
+import asyncio
+import threading
 from monstr.relay.relay import Relay, event_route, filter_route, view_profile_route
 from monstr.event.persist import RelayMemoryEventStore
 from monstr.client.client import Client
 from monstr.event.event import Event
 from monstr.ident.profile import ContactList
 from monstr.util import util_funcs
-from threading import Thread
+from aiohttp import web
 
 
-def run_relay():
-    def start():
-        r.start(port=8888)
-
-    def stop():
-        r.end()
+async def run_relay():
 
     r = Relay(store=RelayMemoryEventStore(), enable_nip15=True)
+    # add some extra http methods to the relay so we can browse the data a little
+    extra_routes = [
+        web.get('/e', event_route(r)),
+        web.get('/req', filter_route(r)),
+        web.get('/view_profile', view_profile_route(r))
+    ]
 
-    # adds a helper route so we can get events over http by id
-    r.app.route('/e', callback=event_route(r))
-    # more flexible req like route
-    r.app.route('/req', callback=filter_route(r))
-    # very basic profile view
-    r.app.route('/view_profile', callback=view_profile_route(r))
 
-    Thread(target=start).start()
-
-    while r.started is False:
-        time.sleep(0.1)
-        print('wait start')
+    await r.start_background(port=8888, routes=extra_routes)
 
     return r
 
 
-def populate_relay(pub_ks, dest_url: str, src_url: str='wss://nostr-dev.wellorder.net'):
+def populate_relay(pub_ks, dest_url: str, src_url):
     print('populating relay with data from pub_ks %s from relay: %s to %s' % (pub_ks,
                                                                               src_url,
                                                                               dest_url))
@@ -71,7 +60,7 @@ def populate_relay(pub_ks, dest_url: str, src_url: str='wss://nostr-dev.wellorde
                             dest_url=dest_url)
 
 
-def import_follows(pub_ks, dest_url: str, src_url='wss://nostr-dev.wellorder.net'):
+def import_follows(pub_ks, dest_url: str, src_url):
 
     # the pub_ks that we're getting follows of should already have been imported
     # so we use the dest relay
@@ -108,29 +97,45 @@ def populate_events(evts, dest_url:str):
             dest_client.publish(c_text)
 
 
-def run(**kargs):
-    print('starting relay...')
-    relay: Relay = run_relay()
+async def run(**kargs):
+    relay: Relay = await run_relay()
 
-    # import these pub keys
-    if 'import_keys' in kargs:
-        print('importing: %s' % kargs['import_keys'])
-        populate_relay(pub_ks=kargs['import_keys'],
-                       dest_url=relay.url)
+    import_relay = 'wss://nostr-pub.wellorder.net'
+    if 'import_relay' in kargs:
+        import_relay = kargs['import_relay']
 
-    # import any profiles in most recent follow list of these profiles
-    if 'import_follows' in kargs:
-        print('importing follows of: %s' % kargs['import_follows'])
-        import_follows(pub_ks=kargs['import_follows'],
-                       dest_url=relay.url)
+    def do_import():
+        # import these pub keys
+        if 'import_keys' in kargs:
+            print('importing: %s' % kargs['import_keys'])
+            populate_relay(src_url=import_relay,
+                           pub_ks=kargs['import_keys'],
+                           dest_url=relay.url)
+
+        # import any profiles in most recent follow list of these profiles
+        if 'import_follows' in kargs:
+            print('importing follows of: %s' % kargs['import_follows'])
+            import_follows(src_url=import_relay,
+                           pub_ks=kargs['import_follows'],
+                           dest_url=relay.url)
+
+    # going to update client to use asyncio but until then this will work best in another therad
+    threading.Thread(target=do_import).start()
+
+    while True:
+        await asyncio.sleep(0.1)
 
     # exit cleanly on ctrl c
     def sigint_handler(signal, frame):
         relay.end()
+
+
     signal.signal(signal.SIGINT, sigint_handler)
 
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    run(import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
-        import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'])
+    import_relay = 'wss://nostr-pub.wellorder.net'
+    asyncio.run(run(import_relay=import_relay,
+                    import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
+                    import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))

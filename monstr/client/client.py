@@ -398,7 +398,6 @@ class Client:
                 the_evt = Event.from_JSON(message[2])
                 for c_handler in self._subs[sub_id]['handlers']:
                     try:
-                        print(sub_id, type(c_handler))
                         c_handler.do_event(self, sub_id, the_evt)
                     except Exception as e:
                         logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))

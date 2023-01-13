@@ -2,10 +2,12 @@
     post text type note from the command line either supply a private key or a random key will created
 """
 import sys
+import signal
 import logging
 from monstr.encrypt import Keys
 from monstr.client.client import Client
 from monstr.event.event import Event
+
 
 def prompt_post(keys:Keys, relay='ws://localhost:8888'):
     """
@@ -21,6 +23,14 @@ def prompt_post(keys:Keys, relay='ws://localhost:8888'):
     client = Client(relay_url=relay)
     client.start()
 
+    # exit cleanly on ctrl c
+    def sigint_handler(signal, frame):
+        print('stopping...')
+        client.end()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
     while msg_n != 'exit':
         msg = input('> ')
         msg_n = msg.lower().replace(' ', '')
@@ -31,8 +41,9 @@ def prompt_post(keys:Keys, relay='ws://localhost:8888'):
             n_event.sign(keys.private_key_hex())
             client.publish(n_event)
 
-    client.end()
     print('stopping...')
+    client.end()
+
 
 
 if __name__ == "__main__":
