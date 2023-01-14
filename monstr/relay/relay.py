@@ -348,16 +348,15 @@ class Relay:
 
         logging.info('Relay::_do_sub subscription added %s (%s)' % (sub_id, filter))
 
-        # post back the pre existing
+        # get and send any stored events we have and send back
         evts = self._store.get_filter(filter)
 
-        my_sends = set()
+        # done in tasks so they get sent in order and EOSE comes after all the events
         for c_evt in evts:
             task = asyncio.create_task(self._send_event(ws, sub_id, c_evt))
-            my_sends.add(task)
-            task.add_done_callback(my_sends.discard)
+            await task
 
-        # NIP15 support
+        # send EOSE event if enabled - unlikely it wouldn't be
         if self._enable_nip15:
             await self._send_eose(ws, sub_id)
 
