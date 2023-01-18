@@ -387,7 +387,6 @@ class ProfileList:
             else:
                 profiles = sorted(profiles, key=sort_func, reverse=reverse)
 
-
         return profiles
 
     def __init__(self, profiles):

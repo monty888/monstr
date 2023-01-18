@@ -1,46 +1,49 @@
 """
     tests for the monstr.relay
+    TODO: this hangs because the client is not async - check again once we have asynced it.
+
+
 """
 import unittest
 import logging
 import signal
 import sys
-from abc import ABC
+import asyncio
 
 from monstr.relay.relay import Relay
 from monstr.event.persist import RelayMemoryEventStore
 from monstr.event.event import Event
 from monstr.client.client import Client
-from monstr.client.event_handlers import EventHandler
-from threading import Thread
 import time
 from monstr.encrypt import Keys
 
-class RelayTestCase(unittest.TestCase):
 
-    def setUp(self) -> None:
+class RelayTestCase(unittest.IsolatedAsyncioTestCase):
+
+    async def asyncSetUp(self) -> None:
         self._relay = None
-        def start_relay():
-            self._relay = Relay(store=RelayMemoryEventStore(),
-                                enable_nip15=True)
-            self._relay.start(port=8888)
 
-        self._thread = Thread(target=start_relay).start()
+        self._relay = Relay(store=RelayMemoryEventStore(),
+                            enable_nip15=True)
+
+        await self._relay.start_background(port=8888)
+
         # make sure relay is accepting before allowing on
-        while self._relay is None or self._relay.started is False:
+        while not self._relay.started:
             time.sleep(0.1)
 
         self._client = Client('ws://localhost:8888').start()
-        self._client.wait_connect()
+        await asyncio.sleep(2)
 
         # key pair for tests
         k = Keys.get_new_key_pair()
-        self._pub_k = k['pub_k'][2:]
+        self._pub_k = k['pub_k']
         self._priv_key = k['priv_k']
 
-    def tearDown(self) -> None:
+
+    async def asyncTearDown(self) -> None:
         self._client.end()
-        self._relay.end()
+        await self._relay.end_background()
 
     def _post_events(self, n_events):
         for i in range(0,n_events):
@@ -50,16 +53,16 @@ class RelayTestCase(unittest.TestCase):
             n_evt.sign(self._priv_key)
             self._client.publish(n_evt)
 
-    def test_post(self):
+    async def test_post(self):
         """
         this just posts 10 events and passes as long as that doesn't break
         if it does probably anything after this is going to break too
         :return:
         """
         self._post_events(10)
+        print('test post done')
 
-
-    def test_sub(self):
+    async def test_sub(self):
         """
             test a sub by post event_count events and then adding a post to get all events
             n_count should match what we get back from the sub
@@ -67,14 +70,13 @@ class RelayTestCase(unittest.TestCase):
 
         # how many event we're going to test with
         event_count = 10
-        done = False
-        loop_count = 0
 
         self._client.wait_connect()
         self._post_events(event_count)
         ret = self._client.query([{}])
 
-        assert 10 == event_count
+        assert len(ret) == event_count
+        print('test sub done')
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
@@ -82,6 +84,5 @@ if __name__ == '__main__':
         sys.exit(0)
 
     signal.signal(signal.SIGINT, sigint_handler)
-
 
     unittest.main()

@@ -71,8 +71,7 @@ class Relay:
         self._enable_nip15 = enable_nip15
 
         # by default when we recieve requests as long as the event has a valid sig we accept
-        # (Prob we should also have a future timestamp requirement, it'd probably have to be 12hr+ as
-        # there is no timezone info with create_at)
+        # (Prob we should also have a future timestamp requirement maybe + a few mins to allow for system clock drift
         # but in real world relay will probably want to protect itself more e.g. set max length on
         # event content, restrict to set kinds or even only allow set pubkeys to posts
         # self._accept_req can be a single class or [] of handlers that are called and the event will
@@ -143,8 +142,6 @@ class Relay:
 
     def start(self, host='localhost', port=8080, end_point='/', routes=None):
         """
-        runs within own gevent.pywsgi.WSGIServer
-        probably to expose _app so that it can be run in any WSGI server by caller
 
         :param host:
         :param port:

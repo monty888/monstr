@@ -1,91 +1,107 @@
-from gevent import monkey
-# important else greenlets may never get to run
-monkey.patch_all()
 import sys
 import logging
 import signal
-import bottle
-from datetime import datetime
+import asyncio
 from cachetools import TTLCache
-from gevent.pywsgi import WSGIServer
-from bottle import Bottle, request
+from aiohttp import web
 from monstr.client.client import ClientPool, Client
 from monstr.encrypt import Keys
 from monstr.ident.event_handlers import NetworkedProfileEventHandler
 
+
 class ServerError(Exception):
     pass
+
 
 class MetaServer:
 
     def __init__(self,
-                  client: ClientPool):
+                  client: Client):
 
-        self._server: WSGIServer = None
+        self._server = web.Application()
+        self._runner = web.AppRunner(self._server)
+
+        def test_route(request: web.Request):
+            return web.Response(text='hi there')
+
+        def _get_err_wrapped(method):
+            async def _wrapped(*args, **kargs):
+                try:
+                    return await method(*args,**kargs)
+                except ServerError as se:
+                    return web.json_response({
+                        'error': str(se)
+                    })
+            return _wrapped
+
+        self._server.add_routes([
+            web.get('/view_profile', _get_err_wrapped(self.view_profile_route))
+        ])
+
         self._client = client
-        self._app = Bottle()
         self._my_peh = NetworkedProfileEventHandler(client=self._client,
                                                     cache=TTLCache(maxsize=1000,
                                                                    ttl=60*30))
 
-        def _get_err_wrapped(method):
-            def _wrapped(**kargs):
-                try:
-                    return method(**kargs)
-                except ServerError as se:
-                    return {
-                        'error': str(se)
-                    }
-            return _wrapped
+    async def view_profile_route(self, request: web.Request):
+        pub_k = ''
+        if 'pub_k' in request.query:
+            pub_k = request.query['pub_k']
 
-        self._app.route('/view_profile', callback=_get_err_wrapped(self.view_profile_route))
+        if pub_k == '':
+            raise ServerError('pub_k param is required')
 
-    def view_profile_route(self):
-        pub_k = request.query.pub_k
-        if not Keys.is_hex_key(pub_k):
-            raise ServerError('%s - doesn\'t look like a nonstr pub_k' % pub_k)
+        k = Keys.get_key(pub_k)
+        if k is None:
+            raise ServerError('%s - doesn\'t look like a nonstr key' % pub_k)
 
         ret = {
             'pub_k': pub_k,
             'error': 'not found'
         }
-        p = self._my_peh.get_profile(pub_k)
+        p = await self._my_peh.get_profile(pub_k)
         if p:
             ret = p.as_dict()
-        return ret
+        return web.json_response(ret)
 
-    def start(self, host='localhost', port=8080):
+    async def start(self, host='localhost', port=8080):
         logging.debug('started web server at %s port=%s' % (host, port))
-        self._server = WSGIServer((host, port), self._app)
-        self._server.serve_forever()
+        await self._runner.setup()
+        site = web.TCPSite(self._runner,
+                           host=host,
+                           port=port)
+        await site.start()
 
     def end(self):
         self._server.close()
 
 
-def start_server(relays):
+async def start_server(relays):
 
     # exit cleanly on ctrl c
+    run = True
+
     def sigint_handler(signal, frame):
-        c.end()
-        meta_server.end()
+        nonlocal run
+        run = False
+
     signal.signal(signal.SIGINT, sigint_handler)
 
     # connection to relays
     # c = Client(relays[0])
-    c = ClientPool(relays)
-    c.start()
-    print('client pool started')
-
-    meta_server = MetaServer(client=c)
-    meta_server.start()
-
+    async with Client(relays[0]) as c:
+        print('client started')
+        meta_server = MetaServer(client=c)
+        await meta_server.start()
+        while run:
+            await asyncio.sleep(0.1)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    relays = ['wss://nostr-pub.wellorder.net']
+    # relays = ['wss://nostr-pub.wellorder.net']
+    relays= ['ws://localhost:8888']
     args = sys.argv[1:]
     if args:
         relays = args[0].split(',')
 
-    start_server(relays)
+    asyncio.run(start_server(relays))

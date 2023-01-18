@@ -32,7 +32,7 @@ async def run_relay():
     return r
 
 
-def populate_relay(pub_ks, dest_url: str, src_url):
+async def populate_relay(pub_ks, dest_url: str, src_url):
     print('populating relay with data from pub_ks %s from relay: %s to %s' % (pub_ks,
                                                                               src_url,
                                                                               dest_url))
@@ -40,32 +40,25 @@ def populate_relay(pub_ks, dest_url: str, src_url):
         pub_ks = [pub_ks]
 
     # get the metas
-    with Client(src_url) as src_client:
+    async with Client(src_url, query_timeout=None, ping_timeout=None) as src_client:
         # get all dat from this author
         for c_chunk in util_funcs.chunk(pub_ks, 10):
-            got_data = False
-            while got_data is False:
-                try:
-                    all_evts = src_client.query(filters={
-                        'kinds': [Event.KIND_META,
-                                  Event.KIND_CONTACT_LIST,
-                                  Event.KIND_TEXT_NOTE],
-                        'authors': c_chunk
-                    })
-                    got_data = True
-                except Exception as e:
-                    pass
-
-            populate_events(evts=all_evts,
-                            dest_url=dest_url)
+            chunk_evts = await src_client.query(filters={
+                'kinds': [Event.KIND_META,
+                          Event.KIND_CONTACT_LIST,
+                          Event.KIND_TEXT_NOTE],
+                'authors': c_chunk
+            })
+            await populate_events(evts=chunk_evts,
+                                  dest_url=dest_url)
 
 
-def import_follows(pub_ks, dest_url: str, src_url):
+async def import_follows(pub_ks, dest_url: str, src_url):
 
     # the pub_ks that we're getting follows of should already have been imported
     # so we use the dest relay
-    with Client(dest_url) as dest_relay:
-        contact_evts = dest_relay.query(filters={
+    async with Client(src_url, query_timeout=None) as src_relay:
+        contact_evts = await src_relay.query(filters={
             'kinds': [Event.KIND_CONTACT_LIST],
             'authors': pub_ks
         })
@@ -79,16 +72,16 @@ def import_follows(pub_ks, dest_url: str, src_url):
             for c_k in c_l.follow_keys():
                 follow_ks.add(c_k)
 
-        populate_relay(pub_ks=list(follow_ks),
-                       dest_url=dest_url,
-                       src_url=src_url)
+        await populate_relay(pub_ks=list(follow_ks),
+                             dest_url=dest_url,
+                             src_url=src_url)
+        print('import follows done...')
 
 
-def populate_events(evts, dest_url:str):
+async def populate_events(evts, dest_url:str):
     c_evt: Event
     # now we'll post them into our own local relay which so it has some real data
-    with Client(dest_url) as dest_client:
-        dest_client.wait_connect()
+    async with Client(dest_url) as dest_client:
         for c_meta in Event.latest_events_only(evts, kind=Event.KIND_META):
             dest_client.publish(c_meta)
         for c_contact in Event.latest_events_only(evts, kind=Event.KIND_CONTACT_LIST):
@@ -104,23 +97,33 @@ async def run(**kargs):
     if 'import_relay' in kargs:
         import_relay = kargs['import_relay']
 
-    def do_import():
-        # import these pub keys
-        if 'import_keys' in kargs:
-            print('importing: %s' % kargs['import_keys'])
-            populate_relay(src_url=import_relay,
-                           pub_ks=kargs['import_keys'],
-                           dest_url=relay.url)
 
-        # import any profiles in most recent follow list of these profiles
-        if 'import_follows' in kargs:
-            print('importing follows of: %s' % kargs['import_follows'])
-            import_follows(src_url=import_relay,
-                           pub_ks=kargs['import_follows'],
-                           dest_url=relay.url)
+    import_tasks = []
 
-    # going to update client to use asyncio but until then this will work best in another therad
-    threading.Thread(target=do_import).start()
+    # import these pub keys
+    if 'import_keys' in kargs:
+        print('importing: %s' % kargs['import_keys'])
+
+        import_tasks.append(asyncio.create_task(populate_relay(src_url=import_relay,
+                                                               pub_ks=kargs['import_keys'],
+                                                               dest_url=relay.url)))
+
+    # import any profiles in most recent follow list of these profiles
+    if 'import_follows' in kargs:
+        print('importing follows of: %s' % kargs['import_follows'])
+        import_tasks.append(asyncio.create_task(import_follows(src_url=import_relay,
+                                                               pub_ks=kargs['import_follows'],
+                                                               dest_url=relay.url)))
+
+    # do the imports if any
+    if import_tasks:
+        done, _ = await asyncio.wait(import_tasks,
+                                     return_when=asyncio.FIRST_EXCEPTION)
+        for task in done:
+            try:
+                task.result()
+            except Exception as e:
+                print(e)
 
     while True:
         await asyncio.sleep(0.1)
@@ -128,7 +131,6 @@ async def run(**kargs):
     # exit cleanly on ctrl c
     def sigint_handler(signal, frame):
         relay.end()
-
 
     signal.signal(signal.SIGINT, sigint_handler)
 

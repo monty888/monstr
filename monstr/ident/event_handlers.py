@@ -144,7 +144,8 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         super().__init__(cache)
 
-    def _fetch_profiles(self, pub_ks) -> [Profile]:
+    async def _fetch_profiles(self, pub_ks) -> [Profile]:
+        logging.debug('_fetch_profiles %s' % pub_ks)
         if not pub_ks:
             return []
 
@@ -157,7 +158,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                 }
             )
 
-        meta_events = self._client.query(
+        meta_events = await self._client.query(
             filters=q,
             # cache will be updating in do_event
             do_event=self.do_event,
@@ -167,7 +168,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         meta_events = Event.latest_events_only(meta_events, kind=Event.KIND_META)
         return [Profile.from_event(evt) for evt in meta_events]
 
-    def _fetch_contacts(self, pub_ks) -> [ContactList]:
+    async def _fetch_contacts(self, pub_ks) -> [ContactList]:
         if not pub_ks:
             return None
 
@@ -180,7 +181,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                 }
             )
 
-        con_events = self._client.query(
+        con_events = await self._client.query(
             filters=q,
             # cache will be updating in do_event
             do_event=self.do_event,
@@ -191,12 +192,12 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         return [ContactList.from_event(evt) for evt in con_events]
 
-    def get_profile(self, pub_k, create_missing=False):
+    async def get_profile(self, pub_k, create_missing=False):
         ret = super().get_profile(pub_k,
                                   create_missing=False)
         # if we don't already have then we'll try and fetch from client
         if ret is None:
-            fetched_meta = self._fetch_profiles([pub_k])
+            fetched_meta = await self._fetch_profiles([pub_k])
             if fetched_meta:
                 ret = fetched_meta[0]
             elif create_missing:
@@ -207,16 +208,16 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         return ret
 
-    def get_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
+    async def get_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
         for_keys = self.get_hex_keys(pub_ks)
         ret = []
         if for_keys:
             # those we have
-            ret = [self.get_profile(k) for k in for_keys if k in self]
+            ret = [await self.get_profile(k) for k in for_keys if k in self]
 
             to_fetch = [k for k in for_keys if k not in self]
             to_fetch.sort()
-            fetched_p = self._fetch_profiles(to_fetch)
+            fetched_p = await self._fetch_profiles(to_fetch)
             ret = ret + fetched_p
 
             # add placeholders for any we don't have if createmissing
@@ -230,8 +231,8 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         return ProfileList(ret)
 
-    def load_contacts(self, p: Profile):
-        p_contacts = self._fetch_contacts(pub_ks=[p.public_key])
+    async def load_contacts(self, p: Profile):
+        p_contacts = await self._fetch_contacts(pub_ks=[p.public_key])
         if p_contacts:
             p.contacts = p_contacts[0]
         # couldn't find any?

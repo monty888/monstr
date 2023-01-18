@@ -7,9 +7,9 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from monstr.ident.event_handlers import ProfileEventHandler
+    from monstr.ident.event_handlers import ProfileEventHandlerInterface
     from monstr.client.client import Client
-
+import asyncio
 from monstr.ident.profile import ProfileList, Profile, Contact, ContactList
 from abc import ABC, abstractmethod
 import base64
@@ -96,11 +96,10 @@ class PrintEventHandler(EventHandler):
     def __init__(self,
                  event_acceptors=[],
                  view_on=True,
-                 profile_handler: ProfileEventHandler = None):
+                 profile_handler: ProfileEventHandlerInterface = None):
 
         self._view_on = view_on
         self._profile_handler = profile_handler
-        self._lock= BoundedSemaphore()
         super().__init__(event_acceptors)
 
     def view_on(self):
@@ -110,16 +109,17 @@ class PrintEventHandler(EventHandler):
         self._view_on = False
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
-        if self._view_on and self.accept_event(evt):
-            with self._lock:
-                self.display_func(the_client, sub_id, evt)
+        if self._view_on:
+            asyncio.create_task(self.display_func(the_client, sub_id, evt))
 
-    def display_func(self, the_client: Client, sub_id, evt: Event):
+    async def display_func(self, the_client: Client, sub_id, evt: Event):
         # single line basic evt info, override this if you want something more
         profile_name = evt.pub_key
         if self._profile_handler is not None:
-            profile_name = self._profile_handler.get_profiles(pub_ks=profile_name,
-                                                              create_missing=True)[0].display_name()
+            profile_name = await self._profile_handler.get_profiles(pub_ks=profile_name,
+                                                                    create_missing=True)
+            profile_name = profile_name[0].display_name()
+
         print('%s: %s - %s' % (evt.created_at,
                                util_funcs.str_tails(profile_name, 4),
                                evt.content))

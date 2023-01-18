@@ -4,12 +4,14 @@
 import sys
 import signal
 import logging
+import asyncio
+import aioconsole
 from monstr.encrypt import Keys
 from monstr.client.client import Client
 from monstr.event.event import Event
 
 
-def prompt_post(keys:Keys, relay='ws://localhost:8888'):
+async def prompt_post(keys:Keys, relay='ws://localhost:8888'):
     """
     loops around accepting text and then posting that to the relay until user types exit
     :param priv_k:
@@ -21,7 +23,7 @@ def prompt_post(keys:Keys, relay='ws://localhost:8888'):
     msg_n = ''
 
     client = Client(relay_url=relay)
-    client.start()
+    asyncio.create_task(client.run())
 
     # exit cleanly on ctrl c
     def sigint_handler(signal, frame):
@@ -32,7 +34,7 @@ def prompt_post(keys:Keys, relay='ws://localhost:8888'):
     signal.signal(signal.SIGINT, sigint_handler)
 
     while msg_n != 'exit':
-        msg = input('> ')
+        msg = await aioconsole.ainput('> ')
         msg_n = msg.lower().replace(' ', '')
         if msg_n != '' and msg_n != 'exit':
             n_event = Event(kind=Event.KIND_TEXT_NOTE,
@@ -63,4 +65,4 @@ if __name__ == "__main__":
             sys.exit(2)
         my_keys = Keys.get_key(for_key)
 
-    prompt_post(my_keys)
+    asyncio.run(prompt_post(my_keys))

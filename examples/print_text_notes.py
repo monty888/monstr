@@ -3,14 +3,18 @@
     then print new events as they come in
 
 """
+import logging
 import sys
+import asyncio
+import signal
 from monstr.client.client import Client
 from monstr.client.event_handlers import EventHandler
 from monstr.event.event import Event
 from monstr.util import util_funcs
 from monstr.encrypt import Keys
 
-def get_notes(for_key, relay='ws://localhost:8888/'):
+
+async def get_notes(for_key, relay='ws://localhost:8888/'):
     print('getting text(1) kind notes for key: %s from %s' % (for_key,
                                                               relay))
 
@@ -61,10 +65,19 @@ def get_notes(for_key, relay='ws://localhost:8888/'):
     c = Client(relay_url=relay,
                on_connect=on_connect,
                on_eose=on_eose)
-    c.start()
+
+    def sigint_handler(signal, frame):
+        print('stopping...')
+        c.end()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    await c.run()
 
 
 if __name__ == "__main__":
+    logging.getLogger().setLevel(logging.ERROR)
     for_key = '5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'
     args = sys.argv[1:]
     if len(args):
@@ -80,4 +93,4 @@ if __name__ == "__main__":
     else:
         print('no key supplied using example default: %s' % for_key)
 
-    get_notes(for_key)
+    asyncio.run(get_notes(for_key))
