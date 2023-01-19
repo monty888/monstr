@@ -20,8 +20,11 @@ Note: developed against python 3.8
 
 # use 
 
-basic queries with context manager
-```
+### basic queries with context manager
+```python
+
+    from monstr.client.client import Client
+
     async with Client(url) as c:
         events = await c.query({
             'limit': 100
@@ -30,8 +33,12 @@ basic queries with context manager
         for c_evt in events:
             print(c_evt)
 ```
-manually manage context
-```
+### basic queries without context manager
+
+```python
+
+    from monstr.client.client import Client
+
     c = Client(url)
     asyncio.create_task(c.run())
     await c.wait_connect()
