@@ -19,7 +19,32 @@ python code for working with nostr
 Note: developed against python 3.8
 
 # use 
-see /monstr/examples
+
+basic queries with context manager
+
+    async with Client(url) as c:
+        events = await c.query({
+            'limit': 100
+        })
+
+        for c_evt in events:
+            print(c_evt)
+
+manually manage context
+
+    c = Client(url)
+    asyncio.create_task(c.run())
+    await c.wait_connect()
+    events = await c.query({
+        'limit': 100
+    })
+
+    for c_evt in events:
+        print(c_evt)
+    c.end()
+
+
+for more see /monstr/examples
 
 # TODO
 
