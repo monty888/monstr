@@ -6,7 +6,6 @@
 import logging
 import signal
 import asyncio
-import threading
 from monstr.relay.relay import Relay, event_route, filter_route, view_profile_route
 from monstr.event.persist import RelayMemoryEventStore
 from monstr.client.client import Client

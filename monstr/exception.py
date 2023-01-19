@@ -5,5 +5,7 @@ class NostrCommandException(Exception):
     def event_already_exists(cls, id):
         return NostrCommandException('event already exists %s' % id)
 
-    # define elsewhere so easier to import...
+
+class ConfigurationError(Exception):
+    # unhappy about something we receive from the command line
     pass
