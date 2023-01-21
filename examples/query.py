@@ -93,9 +93,8 @@ def get_args():
 
 
 async def do_query(args):
-    async with Client(args.relay,
-                      query_timeout=args.timeout) as c:
-
+    async with ClientPool(args.relay.split(','),
+                          query_timeout=args.timeout) as c:
         my_query = {
             'limit': args.limit
         }
@@ -108,9 +107,9 @@ async def do_query(args):
             my_query['authors'] = [c_k.public_key_hex() for c_k in args.authors]
             key_map = {c_k.public_key_hex(): c_k for c_k in args.authors}
 
-        events = await c.query(my_query)
+        events = await c.query(my_query,
+                               emulate_single=False)
         Event.sort(events, inplace=True, reverse=False)
-
 
         c_evt: Event
         for c_evt in events:

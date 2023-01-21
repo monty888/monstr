@@ -7,7 +7,6 @@
 from __future__ import annotations
 from typing import Callable
 import logging
-import time
 import aiohttp
 import asyncio
 from gevent import Greenlet
@@ -19,7 +18,6 @@ from json import JSONDecodeError
 from datetime import datetime, timedelta
 from monstr.util import util_funcs
 from monstr.event.event import Event
-from threading import Thread, BoundedSemaphore
 from enum import Enum
 
 
@@ -1111,11 +1109,12 @@ class ClientPool:
             # read/write default True
             the_client = Client(client,
                                 on_connect=self._on_connect,
-                                on_eose=self._on_eose)
+                                on_eose=self._on_eose,
+                                on_notice=self._on_notice)
         elif isinstance(client, Client):
             the_client = client
             the_client.set_on_connect(self._on_connect)
-            the_client.set_end_stored_events(self._on_eose)
+            the_client.set_on_eose(self._on_eose)
         elif isinstance(client, dict):
             read = True
             if 'read' in client:
@@ -1294,6 +1293,8 @@ class ClientPool:
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
         c_client: Client
+
+        # same sub_id used for each client, wehere not given it'll be the generated id from the first client
         for c_client in self:
             sub_id = c_client.subscribe(sub_id, self, filters)
 
@@ -1304,13 +1305,26 @@ class ClientPool:
             self._handlers[sub_id] = handlers
         return sub_id
 
+    def unsubscribe(self, sub_id):
+        c_client: Client
+
+        if not self.have_sub(sub_id):
+            return
+
+        for c_client in self.clients:
+            c_client.unsubscribe(sub_id)
+
+        del self._handlers[sub_id]
+
+    def have_sub(self, sub_id: str):
+        return sub_id in self._handlers
+
     async def query(self, filters=[],
                     do_event=None,
                     wait_connect=False,
                     emulate_single=True,
                     timeout=None,
                     on_complete=None):
-        print('query mofo!')
         """
         similar to the query func, if you don't supply a ret_func we try and act in the same way as a single
         client would but wait for all clients to return and merge results into a single result with duplicate
@@ -1334,7 +1348,6 @@ class ClientPool:
         async def get_q(the_client: Client):
             nonlocal client_wait
             try:
-
                 ret[the_client.url] = await the_client.query(filters,
                                                              do_event=do_event,
                                                              wait_connect=wait_connect,
@@ -1352,16 +1365,15 @@ class ClientPool:
         c_client: Client
         query_tasks = []
 
-
         for c_client in self.clients:
             if c_client.read:
                 client_wait += 1
                 query_tasks.append(asyncio.create_task(get_q(c_client)))
 
-        if emulate_single:
-            print(client_wait)
-            while client_wait > 0:
-                await asyncio.sleep(0.1)
+        while client_wait > 0:
+            await asyncio.sleep(0.1)
+            if ret and not emulate_single:
+                break
 
         return Event.merge(*ret.values())
 
