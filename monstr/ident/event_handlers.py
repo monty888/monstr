@@ -88,7 +88,7 @@ class ProfileEventHandler(ProfileEventHandlerInterface):
                     (p.public_key in self._cache and
                      self._cache[p.public_key].update_at < p.update_at):
                 self._cache[p.public_key] = p
-                logging.info('ProfileEventHandler::do_event cache updated pub_k - %s' % p.public_key)
+                logging.info('ProfileEventHandler::do_event cache updated pub_k - %s/%s' % (p.public_key, p.name))
 
     def have_profile(self, pub_k):
         return self._cache is not None and pub_k in self._cache
@@ -145,7 +145,6 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         super().__init__(cache)
 
     async def _fetch_profiles(self, pub_ks) -> [Profile]:
-        logging.debug('_fetch_profiles %s' % pub_ks)
         if not pub_ks:
             return []
 
@@ -223,12 +222,11 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
             # add placeholders for any we don't have if createmissing
             # this does't include invalid keys
             if create_missing:
-                for k in for_keys:
+                for k in to_fetch:
                     if k not in self:
                         n_p = self.create_missing(k)
                         ret.append(n_p)
                         self._cache[k] = n_p
-
         return ProfileList(ret)
 
     async def load_contacts(self, p: Profile):

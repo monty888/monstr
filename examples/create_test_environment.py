@@ -97,33 +97,33 @@ async def run(**kargs):
         import_relay = kargs['import_relay']
 
 
-    import_tasks = []
-
-    # import these pub keys
-    if 'import_keys' in kargs:
-        print('importing: %s' % kargs['import_keys'])
-
-        import_tasks.append(asyncio.create_task(populate_relay(src_url=import_relay,
-                                                               pub_ks=kargs['import_keys'],
-                                                               dest_url=relay.url)))
-
-    # import any profiles in most recent follow list of these profiles
-    if 'import_follows' in kargs:
-        print('importing follows of: %s' % kargs['import_follows'])
-        import_tasks.append(asyncio.create_task(import_follows(src_url=import_relay,
-                                                               pub_ks=kargs['import_follows'],
-                                                               dest_url=relay.url)))
-
-    # do the imports if any
-    if import_tasks:
-        done, _ = await asyncio.wait(import_tasks,
-                                     return_when=asyncio.FIRST_EXCEPTION)
-        for task in done:
-            try:
-                task.result()
-            except Exception as e:
-                print(e)
-
+    # import_tasks = []
+    #
+    # # import these pub keys
+    # if 'import_keys' in kargs:
+    #     print('importing: %s' % kargs['import_keys'])
+    #
+    #     import_tasks.append(asyncio.create_task(populate_relay(src_url=import_relay,
+    #                                                            pub_ks=kargs['import_keys'],
+    #                                                            dest_url=relay.url)))
+    #
+    # # import any profiles in most recent follow list of these profiles
+    # if 'import_follows' in kargs:
+    #     print('importing follows of: %s' % kargs['import_follows'])
+    #     import_tasks.append(asyncio.create_task(import_follows(src_url=import_relay,
+    #                                                            pub_ks=kargs['import_follows'],
+    #                                                            dest_url=relay.url)))
+    #
+    # # do the imports if any
+    # if import_tasks:
+    #     done, _ = await asyncio.wait(import_tasks,
+    #                                  return_when=asyncio.FIRST_EXCEPTION)
+    #     for task in done:
+    #         try:
+    #             task.result()
+    #         except Exception as e:
+    #             print(e)
+    #
     while True:
         await asyncio.sleep(0.1)
 

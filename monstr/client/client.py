@@ -59,6 +59,7 @@ class Client:
                  on_status: Callable = None,
                  on_eose: Callable = None,
                  on_notice: Callable = None,
+                 on_ok: Callable = None,
                  read: bool = True,
                  write: bool = True,
                  emulate_eose: bool = True,
@@ -92,7 +93,8 @@ class Client:
         self._on_eose = on_eose
         # on recieving any notice events from the relay
         self._on_notice = on_notice
-
+        # nip-20 command infos
+        self._on_ok = on_ok
         # if relay doesn't support eose should we try and emulate it?
         # this is done by calling the eose func when we first recieve events for a sub
         # and then waiting for a delay (2s) after which we assume that is the end of stored events
@@ -182,44 +184,77 @@ class Client:
 
     def _on_message(self, message):
         type = message[0]
-        sub_id = message[1]
         if type == 'EVENT':
-            if self._read:
-                self._do_events(sub_id, message)
+            if len(message) >= 1:
+                sub_id = message[1]
+                if self._read:
+                    self._do_events(sub_id, message)
+            else:
+                logging.debug('Client::_on_message - not enough data in EVENT message - %s ' % message)
+
         elif type == 'NOTICE':
-            # actually notices don't include a sub_id so this is actually the message/err_txt
-            err_text = sub_id
-            # check what other relays do... maybe they'll be some standard that gives more info
-            # as is can't do that much unless we want to look at the text and all realys might have different
-            # text for the same thing so...
-            logging.debug('NOTICE!! %s' % err_text)
-            if self._on_notice:
-                self._on_notice(self, err_text)
-
+            if len(message) >= 1:
+                err_text = message[1]
+                # check what other relays do... maybe they'll be some standard that gives more info
+                # as is can't do that much unless we want to look at the text and all realys might have different
+                # text for the same thing so...
+                logging.debug('NOTICE!! %s' % err_text)
+                if self._on_notice:
+                    self._on_notice(self, err_text)
+            else:
+                logging.debug('Client::_on_message - not enough data in NOTICE message - %s ' % message)
+        elif type == 'OK':
+            self._do_command(message)
         elif type == 'EOSE':
-            # if relay support nip15 you get this event after the relay has sent the last stored event
-            # at the moment a single function but might be better to add as option to subscribe
-            if not self.have_sub(sub_id):
-                logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
-                self.unsubscribe(sub_id)
+            if len(message) >= 1:
+                sub_id = message[1]
+                # if relay support nip15 you get this event after the relay has sent the last stored event
+                # at the moment a single function but might be better to add as option to subscribe
+                if not self.have_sub(sub_id):
+                    logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
+                    self.unsubscribe(sub_id)
 
-            # eose just for the func
-            if self._subs[sub_id]['eose_func'] is not None:
-                self._subs[sub_id]['eose_func'](self, sub_id, self._subs[sub_id]['events'])
+                # eose just for the func
+                if self._subs[sub_id]['eose_func'] is not None:
+                    self._subs[sub_id]['eose_func'](self, sub_id, self._subs[sub_id]['events'])
 
-            # client level eose
-            elif self._on_eose:
-                self._on_eose(self, sub_id, self._subs[sub_id]['events'])
+                # client level eose
+                elif self._on_eose:
+                    self._on_eose(self, sub_id, self._subs[sub_id]['events'])
 
 
-            # no longer needed
-            logging.debug('end of stored events for %s - %s events received' % (sub_id,
-                                                                                len(self._subs[sub_id]['events'])))
-            self._subs[sub_id]['events'] = []
-            self._subs[sub_id]['is_eose'] = True
+                # no longer needed
+                logging.debug('end of stored events for %s - %s events received' % (sub_id,
+                                                                                    len(self._subs[sub_id]['events'])))
+                self._subs[sub_id]['events'] = []
+                self._subs[sub_id]['is_eose'] = True
+            else:
+                logging.debug('Client::_on_message - not enough data in EOSE message - %s ' % message)
 
         else:
             logging.debug('Network::_on_message unexpected type %s' % type)
+
+    def _do_command(self, message):
+        try:
+            if self._on_ok:
+                if len(message) < 3:
+                    raise Exception('Client::_do_command - not enough data in OK message - %s ' % message)
+
+                event_id = message[1]
+                if not Event.is_event_id(event_id):
+                    raise Exception('Client::_do_command - OK message with invalid event_id - %s ' % message)
+
+                success = message[2].lower()
+                if success not in ('true', 'false'):
+                    raise Exception('Client::_do_command - OK message success not valid value - %s ' % message)
+                success = bool(success)
+
+                msg = message[3]
+                self._on_ok(event_id, success, msg)
+            else:
+                logging.debug('Client::_do_command - OK message - %s' % message)
+        except Exception as e:
+            logging.debug(str(e))
 
     def _do_events(self, sub_id, message):
         the_evt: Event

@@ -1,6 +1,6 @@
 from datetime import datetime
 from geventwebsocket.websocket import WebSocket
-from monstr.exception import NostrCommandException
+from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
 from monstr.event.event import Event
 from monstr.util import util_funcs
 
@@ -14,11 +14,11 @@ class AcceptReqHandler:
     def __init__(self, descriptive_msg=True):
         self._desc_msg = descriptive_msg
 
-    def raise_err(self, err_msg):
+    def raise_err(self, event: Event, message: str, success: bool = False):
         if self._desc_msg:
-            raise NostrCommandException(err_msg)
+            raise NostrCommandException(event.id, success, message)
         else:
-            raise NostrCommandException('post not accepted')
+            raise NostrNoticeException('post not accepted')
 
     def accept_post(self, ws: WebSocket, evt: Event):
         pass
@@ -40,9 +40,13 @@ class LengthAcceptReqHandler(AcceptReqHandler):
     def accept_post(self, ws: WebSocket, evt: Event):
         msg_len = len(evt.content)
         if self._min and msg_len < self._min:
-            self.raise_err('REQ content < accepted min %s got %s' % (self._min, msg_len))
+            self.raise_err(event=evt,
+                           success=False,
+                           message='blocked: content < accepted min %s got %s' % (self._min, msg_len))
         elif self._max and msg_len > self._max:
-            self.raise_err('REQ content > accepted max %s got %s' % (self._max, msg_len))
+            self.raise_err(event=evt,
+                           success=False,
+                           message='blocked: content > accepted max %s got %s' % (self._max, msg_len))
 
     def __str__(self):
         return 'LengthAcceptReqHandler (%s-%s)' % (self._min, self._max)
@@ -71,10 +75,13 @@ class ThrottleAcceptReqHandler(AcceptReqHandler):
             # time since last post
             dt = util_funcs.date_as_ticks(datetime.now())-self._track[evt.pub_key]
             # time since last event is not enough msg not accepted
-            if dt<self._tickmin:
+            if dt < self._tickmin:
                 # update time anyway, this means if keep posting will keep failing...
                 self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
-                self.raise_err('REQ pubkey %s posted to recently, posts most be %ss apart' % (evt.pub_key, self._tickmin))
+                self.raise_err(event=evt,
+                               success=False,
+                               message='blocked: pubkey %s posted to recently, posts most be %ss apart' % (evt.pub_key,
+                                                                                                           self._tickmin))
 
         # update last post for pubkey
         self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())

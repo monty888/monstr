@@ -1,4 +1,7 @@
-from bottle import request, Bottle, abort
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    pass
 import logging
 import asyncio
 import aiohttp
@@ -7,14 +10,15 @@ import json
 from json import JSONDecodeError
 from monstr.event.event import Event
 from monstr.event.persist import RelayEventStoreInterface
-from monstr.relay.accept_handlers import AcceptReqHandler
-from monstr.exception import NostrCommandException
 from monstr.encrypt import Keys
-from sqlite3 import IntegrityError
-try:
-    import psycopg2.errors as pg_errors
-except:
-    pg_errors = None
+from monstr.relay.accept_handlers import AcceptReqHandler
+from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
+
+# from sqlite3 import IntegrityError
+# try:
+#     import psycopg2.errors as pg_errors
+# except:
+#     pg_errors = None
 
 
 class Relay:
@@ -55,7 +59,8 @@ class Relay:
                  description: str = None,
                  pubkey: str = None,
                  contact: str = None,
-                 enable_nip15=False):
+                 enable_nip15=False,
+                 ack_events=True):
 
         # single lock for accessing shared resource
         # corrently connected ws
@@ -69,6 +74,9 @@ class Relay:
         # enable support for nip15, probably this will be removed and just be default on in future
         # as apart from extra msg it shouldn't cause any issues
         self._enable_nip15 = enable_nip15
+
+        # if True we'll send and OK events on accepting event and storing them
+        self._ack_events = ack_events
 
         # by default when we recieve requests as long as the event has a valid sig we accept
         # (Prob we should also have a future timestamp requirement maybe + a few mins to allow for system clock drift
@@ -236,10 +244,10 @@ class Relay:
         try:
             as_json = json.loads(req_str)
             if not as_json:
-                raise NostrCommandException('No command received')
+                raise NostrNoticeException('No command received')
             cmd = as_json[0]
             if cmd not in Relay.VALID_CMDS:
-                raise NostrCommandException('unsupported command %s' % cmd)
+                raise NostrNoticeException('unsupported command %s' % cmd)
 
             # a post of an event
             if cmd == 'EVENT':
@@ -253,43 +261,59 @@ class Relay:
         except JSONDecodeError as je:
             err = ['NOTICE', 'unable to decode command string']
             await ws.send_str(json.dumps(err))
-        except NostrCommandException as ne:
+        except NostrNoticeException as ne:
             err = ['NOTICE', str(ne)]
             await ws.send_str(json.dumps(err))
+        except NostrCommandException as nc:
+            await ws.send_str(json.dumps(nc.get_data()))
 
     async def _do_event(self, req_json, ws):
         if len(req_json) <= 1:
-            raise NostrCommandException('EVENT command missing event data')
+            raise NostrNoticeException('EVENT command missing event data')
         evt = Event.from_JSON(req_json[1])
         # check event sig matches pub_key
         if not evt.is_valid():
-            raise NostrCommandException('invalid event, pubkey doesn\'t match sig')
+            raise NostrCommandException(event_id=evt.id,
+                                        success=False,
+                                        message='invalid: signature validation failed')
 
         # pass evt through all AcceptReqHandlers, if any are not happy they'll raise
         # NostrCommandException otherwise we should be good to go
         for c_accept in self._accept_req:
             c_accept.accept_post(ws, evt)
-
         try:
+            saved = False
             self._store.add_event(evt)
             logging.debug('Relay::_do_event event sent to store %s ' % evt)
             if evt.kind == Event.KIND_DELETE:
                 logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
                 self._store.do_delete(evt)
-
+            saved = True
             await self._check_subs(evt)
-        except Exception as e:
-            if pg_errors:
-                i_exceptions = IntegrityError, pg_errors.UniqueViolation
-            else:
-                i_exceptions = IntegrityError
+            if self._ack_events:
+                asyncio.create_task(ws.send_str(json.dumps([
+                    'OK',
+                    evt.id,
+                    saved,
+                    ''
+                ])))
 
-            if isinstance(e, i_exceptions):
-                msg = str(e).lower()
-                if 'event_id' in msg and 'unique' in msg:
-                    raise NostrCommandException.event_already_exists(evt.id)
-            else:
-                logging.debug('Relay::_do_event - %s' % str(e))
+        except Exception as e:
+            # removed because as we let the db deal with duplicates via replace that doesn't raise an exception
+            # if pg_errors:
+            #     i_exceptions = IntegrityError, pg_errors.UniqueViolation
+            # else:
+            #     i_exceptions = IntegrityError
+            #
+            # if isinstance(e, i_exceptions):
+            #     msg = str(e).lower()
+            #     if 'event_id' in msg and 'unique' in msg:
+            #         raise NostrCommandException.event_already_exists(evt.id)
+            # else:
+            logging.debug('Relay::_do_event - %s' % str(e))
+            raise NostrCommandException(event_id=evt.id,
+                                        success=saved,
+                                        message='error: some bad juju happened on the relay')
 
     async def _check_subs(self, evt: Event):
         """
@@ -372,7 +396,7 @@ class Relay:
         # remove the sub
         del self._ws[socket_id]['subs'][sub_id]
         # not actual exception but this will send notice back that sub_id has been closed, might be useful to client?
-        raise NostrCommandException('CLOSE command for sub_id %s - success' % sub_id)
+        raise NostrNoticeException('CLOSE command for sub_id %s - success' % sub_id)
 
     async def _do_send(self, ws: http_websocket, data):
         try:
