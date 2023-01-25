@@ -7,7 +7,7 @@ from monstr.ident.profile import Profile, ProfileList, Contact, ContactList
 # from monstr.client.persist import ClientEventStoreInterface
 from monstr.event.persist import ClientEventStoreInterface
 from monstr.event.event import Event
-from monstr.db.db import Database, SQLiteDatabase, QueryFromFilter
+from monstr.db.db import Database, SQLiteDatabase
 from monstr.data.data import DataSet
 from monstr.util import util_funcs
 from monstr.encrypt import Keys
@@ -209,7 +209,6 @@ class ProfileStoreInterface(ABC):
                                  is_local=p['priv_k'] != '')
                 ret['added'].add(to_add)
             except Exception as e:
-                print(e)
                 # already exists?
                 ret['existed'].add(to_add)
                 logging.debug('Profile::import_from_file - profile: %s - %s' % (p['profile_name'], e))
@@ -458,12 +457,12 @@ class SQLProfileStore(ProfileStoreInterface):
     def _get_profile_sql_filter(filter={},
                                 profile_type=ProfileType.ANY,
                                 placeholder='?'):
-
         """
         :param filter: {
             public_key : [],
             profile_name : [],
-            private_key : []
+            private_key : [],
+            name: [] - done as like filter
         }
         values are or'd
 
@@ -473,32 +472,61 @@ class SQLProfileStore(ProfileStoreInterface):
         } to execute the query
         """
 
-        my_q = QueryFromFilter(select_sql='select * from profiles',
-                               filter=filter,
-                               placeholder=placeholder,
-                               alias={
-                                   'public_key': 'pub_k',
-                                   'private_key': 'priv_k'
-                               }).get_query()
+        my_q = ['select * from profiles']
+        join = ' where '
+        alias = {
+            'public_key': 'pub_k',
+            'private_key': 'priv_k'
+        }
+        args = []
 
-        join = my_q['join']
-        if join == ' or ':
-            join = ' and '
+        for c_field in ('public_key', 'private_key', 'profile_name', 'name'):
+            if c_field in filter:
+                use_field = c_field
+                if c_field in alias:
+                    use_field = alias[c_field]
+
+                # like matched
+                if c_field in ('name'):
+                    for_like = filter[c_field]
+                    if isinstance(for_like, str):
+                        for_like = [for_like]
+                    for c_like in for_like:
+                        my_q.append(join + '%s like %s' % (use_field,
+                                                           placeholder))
+                        # make optional that this can be prefix insead of just in?
+                        args.append('%'+c_like+'%')
+                        join = ' or '
+
+                # exact matches
+                else:
+                    if isinstance(filter[c_field], str):
+                        my_q.append(join + '%s = %s' % (use_field,
+                                                        placeholder))
+                        args.append(filter[c_field])
+                    else:
+                        my_q.append(join + '%s in (%s) ' % (use_field,
+                                                            ','.join([placeholder]*len(filter[c_field]))))
+                        args = args + filter[c_field]
+                    join = ' or '
+
+        # restrict only to local or remote?
+        if join != ' where ':
+            join = ' and ('
         if profile_type == ProfileType.LOCAL:
-            my_q['sql'] = my_q['sql'] + (' %s priv_k is not null ' % join)
+            my_q.append(join + ' priv_k is not null) ')
         elif profile_type == ProfileType.REMOTE:
-            my_q['sql'] = my_q['sql'] + (' %s priv_k is null ' % join)
+            my_q.append(join + ' priv_k is null) ')
 
         # for now we're ordering what we return
-        my_q['sql'] = my_q['sql'] + """
+        my_q.append("""
         order by 
             case when profile_name ISNULL or profile_name='' then 1 else 0 end, trim(profile_name) COLLATE NOCASE,
             case when name ISNULL or name='' then 1 else 0 end, trim(name)  COLLATE NOCASE
-        """
-
+        """)
         return {
-            'sql': my_q['sql'],
-            'args': my_q['args']
+            'sql': ''.join(my_q),
+            'args': args
         }
 
     @staticmethod
@@ -744,6 +772,16 @@ class SQLProfileStore(ProfileStoreInterface):
             batch = self._prepare_contacts_put(contacts)
 
         return self._db.execute_batch(batch)
+
+    def delete_profile(self, keys: Keys) -> Profile:
+        raise Exception('Not implemented!!!')
+        # pub_k_hex = keys.public_key_hex()
+        # ret = None
+        # # if we found the profile we delete and return the profile obj else None
+        # if pub_k_hex in self._profiles:
+        #     ret = self._profiles[pub_k_hex]
+        #     del self._profiles[pub_k_hex]
+        # return ret
 
     @property
     def newest(self):

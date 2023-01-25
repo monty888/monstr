@@ -65,14 +65,14 @@ async def make_post(relay=DEFAULT_RELAY):
         # send it once
         c.publish(n_msg)
         # this 2nd time sign with another key so we should recieve an OK command err
-        # n_msg.sign(Keys().private_key_hex())
+        n_msg.sign(Keys().private_key_hex())
         c.publish(n_msg)
         await asyncio.sleep(1)
 
 async def main():
-    # await one_off_query_client_with()
-    # await one_off_query_manual()
-    # await simple_sub()
+    await one_off_query_client_with()
+    await one_off_query_manual()
+    await simple_sub()
     await make_post()
 
 if __name__ == "__main__":

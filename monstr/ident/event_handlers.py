@@ -7,6 +7,7 @@ import logging
 from cachetools import TTLCache, LRUCache
 from abc import ABC, abstractmethod
 from monstr.ident.profile import Profile, ProfileList, Keys, ContactList
+from monstr.ident.persist import ProfileStoreInterface
 from monstr.event.event import Event
 from monstr.util import util_funcs
 
@@ -66,15 +67,22 @@ class ProfileEventHandler(ProfileEventHandlerInterface):
     """
         simplified profile event handler -  this handler won't ever fetch profiles itself
         so they need to have been put there via the do_event method having been called
+        or previously persisted into a given store
     """
 
-    def __init__(self, cache=None):
+    def __init__(self,
+                 cache=None,
+                 store: ProfileStoreInterface = None):
         # 10000 least recently used
         # should be ok for most uses - better to use networked for most cases anyway
         # unless maybe you want to control the fetches yourself
         if cache is None:
             cache = LRUCache(maxsize=10000)
+
+        # a cache for quick access now
         self._cache = cache
+        # this is storage e.g. db that we'd expect to persist across runs
+        self._store = store
 
     def do_event(self, the_client: Client, sub_id: str, evts: Event):
         if isinstance(evts, Event):
@@ -82,18 +90,39 @@ class ProfileEventHandler(ProfileEventHandlerInterface):
         evts = Event.latest_events_only(evts, kind=Event.KIND_META)
         c_evt: Event
         p: Profile
+        to_put = []
         for c_evt in evts:
             p = Profile.from_event(c_evt)
             if p.public_key not in self._cache or \
                     (p.public_key in self._cache and
                      self._cache[p.public_key].update_at < p.update_at):
                 self._cache[p.public_key] = p
+                to_put.append(p)
                 logging.info('ProfileEventHandler::do_event cache updated pub_k - %s/%s' % (p.public_key, p.name))
 
-    def have_profile(self, pub_k):
-        return self._cache is not None and pub_k in self._cache
+        if to_put and self._store:
+            self._store.put_profile(to_put)
 
-    def get_profile(self, pub_k:str, create_missing=False) -> Profile:
+    def _in_cache(self, pub_k):
+        return pub_k in self._cache
+
+    def _in_store(self, pub_k):
+        ret = False
+        if self._store:
+            profiles = self._store.select_profiles({
+                'public_key': pub_k
+            })
+            if profiles:
+                ret = True
+                p = profiles[0]
+                self._cache[p.public_key] = p
+
+        return ret
+
+    def have_profile(self, pub_k):
+        return self._in_cache(pub_k) or self._in_store(pub_k)
+
+    def get_profile(self, pub_k: str, create_missing=False) -> Profile:
         # if npub convert to hex
         if pub_k.startswith('npub') and Keys.is_bech32_key(pub_k):
             pub_k = Keys.hex_key(pub_k)
@@ -135,14 +164,15 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
     """
     def __init__(self,
                  client: Client,
-                 cache=None):
+                 cache=None,
+                 store: ProfileStoreInterface = None):
         self._client = client
         # default of 10000 with 1hr timeout at which point it'll go to the network
         if cache is None:
             cache = TTLCache(maxsize=10000,
                              ttl=60*60)
 
-        super().__init__(cache)
+        super().__init__(cache, store)
 
     async def _fetch_profiles(self, pub_ks) -> [Profile]:
         if not pub_ks:
@@ -183,7 +213,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         con_events = await self._client.query(
             filters=q,
             # cache will be updating in do_event
-            do_event=self.do_event,
+            # do_event=self.do_event - this will need adding if we expect contacts to end in the store
             # note this means data will be return as quick as your slowest relay...
             emulate_single=True)
 

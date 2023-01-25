@@ -71,10 +71,10 @@ class EventHandler:
             'ids': ids
         })
 
-    def do_event(self, sub_id, evt: Event, relay):
+    def do_event(self, client: Client, sub_id, evt: [Event]):
         def get_store_func(the_chunk):
             def the_func():
-                self._store.add_event_relay(the_chunk, relay)
+                self._store.add_event_relay(the_chunk, client.url)
             return the_func
 
         for c_evt_chunk in util_funcs.chunk(evt, self._max_insert_batch):
