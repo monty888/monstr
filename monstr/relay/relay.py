@@ -5,6 +5,7 @@ if TYPE_CHECKING:
 import logging
 import asyncio
 import aiohttp
+from aiohttp import WSCloseCode
 from aiohttp import web, http_websocket
 import json
 from json import JSONDecodeError
@@ -62,8 +63,8 @@ class Relay:
                  enable_nip15=False,
                  ack_events=True):
 
-        # single lock for accessing shared resource
-        # corrently connected ws
+
+        # open web sockets
         self._ws_id = 0
         self._ws = {}
         self._store = store
@@ -140,7 +141,18 @@ class Relay:
         self._port = port
         self._end_point = end_point
 
+        async def on_shutdown(app):
+            logging.info('Relay::on_shutdown - closing open websockets')
+            to_close = [self._ws[i]['ws'] for i in self._ws]
+            for ws in to_close:
+                await ws.close(code=WSCloseCode.GOING_AWAY,
+                               message='Server shutdown')
+
         self._server = web.Application()
+        self._server.on_shutdown.append(on_shutdown)
+
+
+
         # self._server.router.add_route('*', '/{path_info:.*}', self._wsgi_handler)
 
         my_routes = [web.get(self._end_point, handler=self._websocket_handler)]
