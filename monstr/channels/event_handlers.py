@@ -4,7 +4,6 @@ from monstr.event.event import Event
 from monstr.channels.persist import ChannelStoreInterface, Channel, ChannelList
 from monstr.util import util_funcs
 from monstr.client.client import Client
-from gevent import Greenlet
 import logging
 
 
@@ -183,7 +182,7 @@ class NetworkedChannelEventHandler(ChannelEventHandler):
         if evts:
             # return chanels we found
             ret = [Channel.from_event(c_evt) for c_evt in evts]
-            Greenlet(util_funcs.get_background_task(self._do_creates, ret)).start_later(0)
+            # Greenlet(util_funcs.get_background_task(self._do_creates, ret)).start_later(0)
 
         return ret
 

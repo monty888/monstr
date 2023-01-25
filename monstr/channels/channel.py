@@ -4,7 +4,6 @@ if TYPE_CHECKING:
     pass
 
 import logging
-from threading import BoundedSemaphore
 from datetime import datetime
 import json
 from json import JSONDecodeError

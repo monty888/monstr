@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 import base64
 import logging
-from gevent.lock import BoundedSemaphore
+# from gevent.lock import BoundedSemaphore
 from monstr.ident.profile import Profile
 from monstr.client.client import Client
 from monstr.event.event import Event
@@ -59,7 +59,7 @@ class MessageThreads:
         self._msg_lookup = set()
         # lock for above so we can prevent duplicates, for example
         # we'll see the same event multiple times if we're attached to multiple relays
-        self._msg_lookup_lock = BoundedSemaphore()
+        # self._msg_lookup_lock = BoundedSemaphore()
 
         self._evt_store = evt_store
 
