@@ -9,7 +9,6 @@ from typing import Callable
 import logging
 import aiohttp
 import asyncio
-from gevent import Greenlet
 import websockets
 import json
 import random
