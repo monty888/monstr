@@ -109,6 +109,9 @@ class PrintEventHandler(EventHandler):
         self._view_on = False
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
+        if not self.accept_event(evt):
+            return
+
         if self._view_on:
             asyncio.create_task(self.display_func(the_client, sub_id, evt))
 

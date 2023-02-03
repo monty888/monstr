@@ -800,7 +800,7 @@ class ClientPool:
         return self._status['connected']
 
     # methods work on all but we'll probably want to be able to name on calls
-    async def start(self):
+    async def run(self):
         if self._state != RunState.init:
             raise Exception('ClientPool::start - unexpected state, got %s expected %s' % (self._state,
                                                                                           RunState.init))
@@ -930,6 +930,12 @@ class ClientPool:
             if self._state in (RunState.stopping, RunState.stopped):
                 raise Exception('ClientPool::wait_started - bad state when waiting for ClientPool to start, state=%s' % self._state)
 
+    async def wait_connect(self):
+        # so we can switch in a Client Pool where we have used a Client
+        # probably need to look at this because a single realy not connecting is going to result in
+        # getting stuck at start
+        self.wait_started()
+
     def do_event(self, client: Client, sub_id: str, evt):
 
         # shouldn't be possible...
@@ -974,7 +980,7 @@ class ClientPool:
             yield self._clients[url]['client']
 
     async def __aenter__(self):
-        asyncio.create_task(self.start())
+        asyncio.create_task(self.run())
         await self.wait_started()
         return self
 

@@ -87,18 +87,29 @@ class ProfileEventHandler(ProfileEventHandlerInterface):
     def do_event(self, the_client: Client, sub_id: str, evts: Event):
         if isinstance(evts, Event):
             evts = [evts]
-        evts = Event.latest_events_only(evts, kind=Event.KIND_META)
+        meta_evts = Event.latest_events_only(evts, kind=Event.KIND_META)
         c_evt: Event
         p: Profile
         to_put = []
-        for c_evt in evts:
+        # update metas
+        for c_evt in meta_evts:
             p = Profile.from_event(c_evt)
             if p.public_key not in self._cache or \
                     (p.public_key in self._cache and
                      self._cache[p.public_key].update_at < p.update_at):
                 self._cache[p.public_key] = p
                 to_put.append(p)
-                logging.info('ProfileEventHandler::do_event cache updated pub_k - %s/%s' % (p.public_key, p.name))
+                logging.info('ProfileEventHandler::do_event cache updated profile pub_k - %s/%s' % (p.public_key,
+                                                                                                    p.name))
+
+        # update contacts.. note only done if we have a profile in the cache
+        contact_evts = Event.latest_events_only(evts, kind=Event.KIND_CONTACT_LIST)
+        for c_evt in contact_evts:
+            if self._in_cache(c_evt.pub_key):
+                p = self._cache[c_evt.pub_key]
+                p.contacts = ContactList.from_event(c_evt)
+                logging.info('ProfileEventHandler::do_event cache updated contacts pub_k - %s/%s' % (p.public_key,
+                                                                                                     p.name))
 
         if to_put and self._store:
             self._store.put_profile(to_put)
@@ -212,13 +223,10 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         con_events = await self._client.query(
             filters=q,
-            # cache will be updating in do_event
-            # do_event=self.do_event - this will need adding if we expect contacts to end in the store
-            # note this means data will be return as quick as your slowest relay...
+            do_event=self.do_event,
             emulate_single=True)
 
         Event.latest_events_only(con_events, kind=Event.KIND_CONTACT_LIST)
-
         return [ContactList.from_event(evt) for evt in con_events]
 
     async def get_profile(self, pub_k, create_missing=False):

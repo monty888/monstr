@@ -338,13 +338,43 @@ class MemoryProfileStore(ProfileStoreInterface):
         c_p: Profile
         profiles: [Profile] = []
 
+        def _test_match(test_vals: str, in_val):
+            exact = False
+            if isinstance(test_vals, dict):
+                if 'exact' in test_vals:
+                    exact = test_vals['exact']
+                test_vals = test_vals['values']
+
+            if isinstance(test_vals, str):
+                test_vals = test_vals.split(',')
+
+            ret = False
+            if in_val is not None:
+                in_val = in_val.lower()
+                for t_val in [v.lower() for v in test_vals]:
+                    ret = exact is False and t_val in in_val \
+                          or exact is True and t_val == in_val
+
+                    if ret:
+                        break
+            return ret
+
         for i, pub_k in enumerate(self._profiles):
             c_p = self._profiles[pub_k]
-
-            matches = 'public_key' in filter and pub_k in filter['public_key'] \
-                      or 'private_key' in filter and c_p.private_key in filter['private_key'] \
-                      or 'profile_name' in filter and c_p.profile_name in filter['profile_name'] \
-                      or len(filter) == 0
+            matches = False
+            if len(filter) == 0:
+                matches = True
+            else:
+                if 'public_key' in filter:
+                    matches = _test_match(filter['public_key'], c_p.public_key)
+                if 'private_key' in filter:
+                    matches = matches or _test_match(filter['private_key'], c_p.private_key)
+                if 'profile_name' in filter:
+                    matches = matches or _test_match(filter['profile_name'], c_p.profile_name)
+                if 'name' in filter:
+                    matches = matches or _test_match(filter['name'], c_p.name)
+                if 'about' in filter:
+                    matches = matches or _test_match(filter['about'], c_p.get_attr('about'))
 
             if matches:
                 c_p = copy(c_p)

@@ -12,12 +12,13 @@ from datetime import datetime, timedelta
 from collections import OrderedDict
 from functools import lru_cache
 from monstr.event.event import Event, EventTags
+from monstr.client.event_handlers import EventHandler
 from monstr.util import util_funcs
 from monstr.event.persist import ClientEventStoreInterface
 from monstr.spam_handlers.spam_handlers import SpamHandlerInterface
 
 
-class EventHandler:
+class StoreEventHandler(EventHandler):
     """
         persists event we have seen to storage, profiles created/updated for meta_data type
         TODO: either add back in persist profile here or move to own handler
@@ -49,6 +50,9 @@ class EventHandler:
         self._store = store
         self._max_insert_batch = max_insert_batch
         self._spam_handler = spam_handler
+
+        # change this shit - the spam handler should probably be just another acceptor ?
+        super().__init__(event_acceptors=[])
 
     def get_events_by_ids(self, ids):
         if isinstance(ids, str):
@@ -289,7 +293,7 @@ class EventHandler:
         return self._store
 
 
-class NetworkedEventHandler(EventHandler):
+class NetworkedStoreEventHandler(StoreEventHandler):
 
     def __init__(self,
                  store: ClientEventStoreInterface,
