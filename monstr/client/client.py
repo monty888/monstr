@@ -934,7 +934,7 @@ class ClientPool:
         # so we can switch in a Client Pool where we have used a Client
         # probably need to look at this because a single realy not connecting is going to result in
         # getting stuck at start
-        self.wait_started()
+        await self.wait_started()
 
     def do_event(self, client: Client, sub_id: str, evt):
 
