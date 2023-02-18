@@ -24,7 +24,6 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
 
     class PrintHandler(EventHandler):
         def do_event(self, the_client: Client, sub_id: str, evt: [Event]):
-            print(sub_id)
             print_event('ON_EVENT', evt)
 
     my_handler = PrintHandler()

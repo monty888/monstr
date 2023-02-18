@@ -1,5 +1,5 @@
 from datetime import datetime
-from geventwebsocket.websocket import WebSocket
+from aiohttp import http_websocket
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
 from monstr.event.event import Event
 from monstr.util import util_funcs
@@ -20,7 +20,7 @@ class AcceptReqHandler:
         else:
             raise NostrNoticeException('post not accepted')
 
-    def accept_post(self, ws: WebSocket, evt: Event):
+    def accept_post(self, ws: http_websocket, evt: Event):
         pass
 
 
@@ -37,7 +37,7 @@ class LengthAcceptReqHandler(AcceptReqHandler):
         self._max = max
         super().__init__(descriptive_msg)
 
-    def accept_post(self, ws: WebSocket, evt: Event):
+    def accept_post(self, ws: http_websocket, evt: Event):
         msg_len = len(evt.content)
         if self._min and msg_len < self._min:
             self.raise_err(event=evt,
@@ -69,7 +69,7 @@ class ThrottleAcceptReqHandler(AcceptReqHandler):
         self._track = {}
         super().__init__(descriptive_msg)
 
-    def accept_post(self, ws: WebSocket, evt: Event):
+    def accept_post(self, ws: http_websocket, evt: Event):
         # pubkey posted before
         if evt.pub_key in self._track:
             # time since last post

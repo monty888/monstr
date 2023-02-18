@@ -4,7 +4,8 @@ cryptography==38.0.4
 #pkg-resources==0.0.0
 secp256k1==0.14.0
 
-aiohttp~=3.8.3
+aiohttp==3.8.4
 setuptools~=57.0.0
 websockets~=10.4
 aioconsole~=0.5.1
+aiosqlite~=0.18.0

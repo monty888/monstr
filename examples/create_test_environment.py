@@ -6,25 +6,30 @@
 import logging
 import signal
 import asyncio
+from datetime import datetime
 from monstr.relay.relay import Relay, event_route, filter_route, view_profile_route
-from monstr.event.persist import RelayMemoryEventStore
+from monstr.event.persist import RelayMemoryEventStore, RelaySQLiteEventStore, ARelaySQLiteEventStore
 from monstr.client.client import Client
 from monstr.event.event import Event
 from monstr.ident.profile import ContactList
 from monstr.util import util_funcs
 from aiohttp import web
+from pathlib import Path
 
+WORK_DIR = '%s/.nostrpy/' % Path.home()
+DB = WORK_DIR+'test_env.db'
 
 async def run_relay():
 
-    r = Relay(store=RelayMemoryEventStore(), enable_nip15=True)
+    r = Relay(store=ARelaySQLiteEventStore(DB),
+              enable_nip15=True,
+              max_sub=10)
     # add some extra http methods to the relay so we can browse the data a little
     extra_routes = [
         web.get('/e', event_route(r)),
         web.get('/req', filter_route(r)),
         web.get('/view_profile', view_profile_route(r))
     ]
-
 
     await r.start_background(port=8888, routes=extra_routes)
 
@@ -80,7 +85,14 @@ async def import_follows(pub_ks, dest_url: str, src_url):
 async def populate_events(evts, dest_url:str):
     c_evt: Event
     # now we'll post them into our own local relay which so it has some real data
-    async with Client(dest_url) as dest_client:
+
+    last_msg = datetime.now()
+
+    def my_ok(the_client: Client, event_id, success, msg):
+        nonlocal last_msg
+        last_msg = datetime.now()
+
+    async with Client(dest_url, on_ok=my_ok) as dest_client:
         for c_meta in Event.latest_events_only(evts, kind=Event.KIND_META):
             dest_client.publish(c_meta)
         for c_contact in Event.latest_events_only(evts, kind=Event.KIND_CONTACT_LIST):
@@ -88,6 +100,9 @@ async def populate_events(evts, dest_url:str):
         for c_text in [c_evt for c_evt in evts if c_evt.kind == Event.KIND_TEXT_NOTE]:
             dest_client.publish(c_text)
 
+        while (datetime.now() - last_msg).seconds < 5:
+            print('waiting...')
+            await asyncio.sleep(0.1)
 
 async def run(**kargs):
     relay: Relay = await run_relay()
@@ -106,7 +121,7 @@ async def run(**kargs):
         import_tasks.append(asyncio.create_task(populate_relay(src_url=import_relay,
                                                                pub_ks=kargs['import_keys'],
                                                                dest_url=relay.url)))
-
+    #
     # import any profiles in most recent follow list of these profiles
     if 'import_follows' in kargs:
         print('importing follows of: %s' % kargs['import_follows'])
@@ -137,6 +152,8 @@ async def run(**kargs):
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     import_relay = 'wss://nostr-pub.wellorder.net'
+    util_funcs.create_sqlite_store(DB)
+
     asyncio.run(run(import_relay=import_relay,
                     import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
                     import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))

@@ -10,7 +10,7 @@ from aiohttp import web, http_websocket
 import json
 from json import JSONDecodeError
 from monstr.event.event import Event
-from monstr.event.persist import RelayEventStoreInterface
+from monstr.event.persist import RelayEventStoreInterface, ARelayEventStoreInterface
 from monstr.encrypt import Keys
 from monstr.relay.accept_handlers import AcceptReqHandler
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
@@ -55,7 +55,7 @@ class Relay:
 
     def __init__(self, store: RelayEventStoreInterface,
                  accept_req_handler=None,
-                 max_sub=3,
+                 max_sub=10,
                  name: str = None,
                  description: str = None,
                  pubkey: str = None,
@@ -67,14 +67,14 @@ class Relay:
         # open web sockets
         self._ws_id = 0
         self._ws = {}
+
+        # if you don't hand in a store then nothing is being saved and events will only be seen as they come in
         self._store = store
+        if store and not isinstance(store, (ARelayEventStoreInterface, RelayEventStoreInterface)):
+            raise Exception('Relay::__init__ store should implement ARelayEventStoreInterface or RelayEventStoreInterface')
 
         # max subs allowed per websocket
         self._max_sub = max_sub
-
-        # enable support for nip15, probably this will be removed and just be default on in future
-        # as apart from extra msg it shouldn't cause any issues
-        self._enable_nip15 = enable_nip15
 
         # if True we'll send and OK events on accepting event and storing them
         self._ack_events = ack_events
@@ -93,11 +93,6 @@ class Relay:
         if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
 
-        logging.info('Relay::__init__ maxsub=%s '
-                     'EOSE enabled(NIP15)=%s, Deletes(NIP9)=%s, Event treatment(NIP16)=%s' % (self._max_sub,
-                                                                                              self._enable_nip15,
-                                                                                              self._store.is_NIP09(),
-                                                                                              self._store.is_NIP16()))
         # this is the server that we run as, it's created after calling start()
         # default is localhost:8080
         self._server: web.Application = None
@@ -109,15 +104,30 @@ class Relay:
         if pubkey is not None and not Keys.is_key(pubkey):
             raise Exception('given contact pubkey is not correct: %s' % pubkey)
 
+        # deletes
+        self._nip09 = self._store and self._store.is_NIP09()
+        # EOSE
+        self._nip15 = enable_nip15
+        # replacable and transient event ranges
+        self._nip16 = self._store and self._store.is_NIP16()
+
+
         nips = [1, 2, 11]
-        if self._enable_nip15:
+        if self._nip15:
             nips.append(15)
-        if self._store.is_NIP09():
+        if self._nip09:
             nips.append(9)
-        if self._store.is_NIP16():
+        if self._nip16:
             nips.append(16)
 
         nips.sort()
+
+        logging.info('Relay::__init__ maxsub=%s '
+                     'EOSE enabled(NIP15)=%s, Deletes(NIP9)=%s, Event treatment(NIP16)=%s' % (self._max_sub,
+                                                                                              self._nip15,
+                                                                                              self._nip09,
+                                                                                              self._nip16))
+
 
         self._relay_information = {
             'software': 'https://github.com/monty888/nostrpy',
@@ -159,6 +169,7 @@ class Relay:
         if routes:
             my_routes = my_routes + routes
         self._server.add_routes(my_routes)
+
 
     def start(self, host='localhost', port=8080, end_point='/', routes=None):
         """
@@ -235,7 +246,6 @@ class Relay:
         }
 
         async for msg in ws:
-
             if msg.type == aiohttp.WSMsgType.TEXT:
                 await self._do_request(ws, msg.data)
             elif msg.type == aiohttp.WSMsgType.ERROR:
@@ -255,6 +265,7 @@ class Relay:
 
         try:
             as_json = json.loads(req_str)
+            err = None
             if not as_json:
                 raise NostrNoticeException('No command received')
             cmd = as_json[0]
@@ -272,12 +283,18 @@ class Relay:
 
         except JSONDecodeError as je:
             err = ['NOTICE', 'unable to decode command string']
-            await ws.send_str(json.dumps(err))
         except NostrNoticeException as ne:
             err = ['NOTICE', str(ne)]
-            await ws.send_str(json.dumps(err))
         except NostrCommandException as nc:
-            await ws.send_str(json.dumps(nc.get_data()))
+            err = nc.get_data()
+
+
+        await self._do_send(ws=ws,
+                            data=err)
+
+    async def _persist_events(self):
+        async for job in self._write_queue:
+            print(job)
 
     async def _do_event(self, req_json, ws):
         if len(req_json) <= 1:
@@ -293,70 +310,53 @@ class Relay:
         # NostrCommandException otherwise we should be good to go
         for c_accept in self._accept_req:
             c_accept.accept_post(ws, evt)
+        # if self._store:
+        #     self._write_queue.put_nowait((ws,evt))
+
         try:
             saved = False
-            self._store.add_event(evt)
-            logging.debug('Relay::_do_event event sent to store %s ' % evt)
-            if evt.kind == Event.KIND_DELETE:
-                logging.debug('Relay::_do_event doing delete events - %s ' % evt.e_tags)
-                self._store.do_delete(evt)
-            saved = True
-            await self._check_subs(evt)
-            if self._ack_events:
-                asyncio.create_task(ws.send_str(json.dumps([
-                    'OK',
-                    evt.id,
-                    saved,
-                    ''
-                ])))
-
+            if self._store:
+                if isinstance(self._store, ARelayEventStoreInterface):
+                    await self._store.add_event(evt)
+                else:
+                    self._store.add_event(evt)
+                logging.debug('Relay::_do_event event sent to store %s ' % evt)
+                saved = True
         except Exception as e:
-            # removed because as we let the db deal with duplicates via replace that doesn't raise an exception
-            # if pg_errors:
-            #     i_exceptions = IntegrityError, pg_errors.UniqueViolation
-            # else:
-            #     i_exceptions = IntegrityError
-            #
-            # if isinstance(e, i_exceptions):
-            #     msg = str(e).lower()
-            #     if 'event_id' in msg and 'unique' in msg:
-            #         raise NostrCommandException.event_already_exists(evt.id)
-            # else:
-            logging.debug('Relay::_do_event - %s' % str(e))
+            logging.debug('Relay::store event failed - %s' % e)
+
+        # do the subs
+        await self._check_subs(evt)
+
+        if self._ack_events:
             raise NostrCommandException(event_id=evt.id,
                                         success=saved,
-                                        message='error: some bad juju happened on the relay')
+                                        message='')
+
+
 
     async def _check_subs(self, evt: Event):
         """
-        go through all our filters and send the event to any clients who have registered subs
-        with filters that the new event passes.
-        Note done sequentially through our subs, if we ever had a large numbers of subscribers
-        this would probably be problematic, also likely a problem if one blocked or closed etc..
-        TODO: convert the send to use ayncio - actually probably have to use threadpool
-        see https://stackoverflow.com/questions/51050315/using-asyncio-for-non-async-functions-in-python
-        or maybe look at gevent that websocket is already using
 
         :param evt:
         :return:
         """
-
-        my_sends = set()
-
+        tasks = set()
         for socket_id in self._ws:
             for c_sub_id in self._ws[socket_id]['subs']:
                 the_sub = self._ws[socket_id]['subs'][c_sub_id]
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
-                    task = asyncio.create_task(self._send_event(self._ws[socket_id]['ws'], c_sub_id, evt.event_data()))
-                    my_sends.add(task)
-                    task.add_done_callback(my_sends.discard)
+                    n_task = asyncio.create_task(self._send_event(self._ws[socket_id]['ws'], c_sub_id, evt.event_data()))
+                    tasks.add(n_task)
+                    n_task.add_done_callback(tasks.discard)
+
 
     async def _do_sub(self, req_json, ws):
-        logging.info('subscription requested')
+        logging.info('subscription requested - %s' % req_json)
         # get sub_id and filter fro the json
         if len(req_json) <= 1:
-            raise NostrCommandException('REQ command missing sub_id')
+            raise NostrNoticeException('REQ command missing sub_id')
         sub_id = req_json[1]
         # if we don't get a filter default to {} rather than error?
         # did this because loquaz doesnt supply so assuming this is permited
@@ -368,11 +368,11 @@ class Relay:
         # this user already subscribed under same sub_id
         socket_id = ws.id
         if sub_id in self._ws[socket_id]['subs']:
-            raise NostrCommandException('REQ command for sub_id that already exists - %s' % sub_id)
+            raise NostrNoticeException('REQ command for sub_id that already exists - %s' % sub_id)
         # this sub would put us over max for this socket
         sub_count = len(self._ws[socket_id]['subs'])
         if sub_count >= self._max_sub:
-            raise NostrCommandException('REQ new sub_id %s not allowed, already at max subs=%s' % (sub_id, self._max_sub))
+            raise NostrNoticeException('REQ new sub_id %s not allowed, already at max subs=%s' % (sub_id, self._max_sub))
 
         self._ws[socket_id]['subs'][sub_id] = {
             'id': sub_id,
@@ -382,15 +382,18 @@ class Relay:
         logging.info('Relay::_do_sub subscription added %s (%s)' % (sub_id, filter))
 
         # get and send any stored events we have and send back
-        evts = self._store.get_filter(filter)
+        evts = []
+        if self._store:
+            if isinstance(self._store, ARelayEventStoreInterface):
+                evts = await self._store.get_filter(filter)
+            else:
+                evts = self._store.get_filter(filter)
 
-        # done in tasks so they get sent in order and EOSE comes after all the events
         for c_evt in evts:
-            task = asyncio.create_task(self._send_event(ws, sub_id, c_evt))
-            await task
+            await self._send_event(ws, sub_id, c_evt)
 
         # send EOSE event if enabled - unlikely it wouldn't be
-        if self._enable_nip15:
+        if self._nip15:
             await self._send_eose(ws, sub_id)
 
     async def _do_unsub(self, req_json, ws):
@@ -417,12 +420,12 @@ class Relay:
             logging.info('Relay::_do_send error: %s' % e)
 
     async def _send_event(self, ws: http_websocket, sub_id, evt):
-        asyncio.create_task(self._do_send(ws=ws,
+        await self._do_send(ws=ws,
                             data=[
                                 'EVENT',
                                 sub_id,
                                 evt
-                            ]))
+                            ])
 
     async def _send_eose(self, ws: http_websocket, sub_id):
         """
@@ -453,7 +456,7 @@ def event_route(r: Relay):
             relay.app.route('/e', callback=route_method(relay))
             http://host:port/e?id=<event_id> will now return events
     """
-    def the_route(request: web.Request):
+    async def the_route(request: web.Request):
         id = None
         if 'id' in request.query:
             id = request.query['id']
@@ -465,9 +468,16 @@ def event_route(r: Relay):
                 raise ValueError('id: %s is not a valid event id' % id)
             else:
                 ret = {}
-                evts = r.store.get_filter({
+
+                filter = {
                     'ids': id
-                })
+                }
+
+                if isinstance(r.store, ARelayEventStoreInterface):
+                    evts = await r.store.get_filter(filter)
+                else:
+                    evts = r.store.get_filter(filter)
+
                 if evts:
                     ret = evts[0]
 
@@ -490,7 +500,7 @@ def view_profile_route(r: Relay):
     :param r:
     :return:
     """
-    def the_route(request: web.Request):
+    async def the_route(request: web.Request):
 
         pub_k = None
         if 'pub_k' in request.query:
@@ -503,10 +513,15 @@ def view_profile_route(r: Relay):
             if k is None:
                 raise ValueError('%s - doesn\'t look like a valid nostr key' % pub_k)
 
-            evts = r.store.get_filter({
+            filter = {
                 'authors': [k.public_key_hex()],
                 'kinds': [Event.KIND_META]
-            })
+            }
+
+            if isinstance(r.store, ARelayEventStoreInterface):
+                evts = await r.store.get_filter(filter)
+            else:
+                evts = r.store.get_filter(filter)
 
             evts = Event.latest_events_only([Event.from_JSON(c_evt) for c_evt in evts],
                                             kind=Event.KIND_META)
@@ -569,8 +584,7 @@ def filter_route(r: Relay):
             relay.app.route('/req', callback=route_method(relay))
             http://host:port/req?kinds=0?authors=some_key
     """
-    def the_route(request: web.Request):
-
+    async def the_route(request: web.Request):
         def _get_param(name: str, mutiple=False, numeric=False):
 
             def _make_numeric(val):
@@ -619,7 +633,11 @@ def filter_route(r: Relay):
         if ids:
             filter['ids'] = ids
 
-        evts = r.store.get_filter(filter)
+        if isinstance(r.store, ARelayEventStoreInterface):
+            evts = await r.store.get_filter(filter)
+        else:
+            evts = r.store.get_filter(filter)
+
         ret = None
         if evts:
             ret = {

@@ -4,7 +4,6 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 from enum import Enum
 from monstr.ident.profile import Profile, ProfileList, Contact, ContactList
-# from monstr.client.persist import ClientEventStoreInterface
 from monstr.event.persist import ClientEventStoreInterface
 from monstr.event.event import Event
 from monstr.db.db import Database, SQLiteDatabase

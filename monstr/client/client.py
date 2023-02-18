@@ -159,6 +159,7 @@ class Client:
                                                        producer_task,
                                                        terminate_task],
                                                        return_when=asyncio.FIRST_EXCEPTION)
+
                     # clean up
                     for task in pending:
                         task.cancel()
@@ -187,12 +188,14 @@ class Client:
                 logging.debug('Client::_do_status - %s' % e)
 
     async def wait_connect(self, timeout=None):
+        # note that if this timeouts it doesn't stop the underlying run method, so we'll continue to try to
+        # establish a connection unless you end the client (or your're using with where it'll be ended automatically)
         wait_time = 0
         while not self.connected:
             await asyncio.sleep(0.1)
             wait_time += 0.1
             if timeout and int(wait_time) >= timeout:
-                raise ConnectionError('CLient::wait_connect timed out waiting for connection after %ss' % timeout)
+                raise ConnectionError('Client::wait_connect timed out waiting for connection after %ss' % timeout)
 
     async def _my_consumer(self, ws):
         async for msg in ws:
@@ -203,6 +206,10 @@ class Client:
         raise ConnectionError('Client::_my_consumer - server has closed the websocket')
 
     def _on_message(self, message):
+        # null/None message?
+        if not message:
+            return
+
         type = message[0]
         if type == 'EVENT':
             if len(message) >= 1:
@@ -264,13 +271,12 @@ class Client:
                 if not Event.is_event_id(event_id):
                     raise Exception('Client::_do_command - OK message with invalid event_id - %s ' % message)
 
-                success = message[2].lower()
-                if success not in ('true', 'false'):
+                success = message[2]
+                if not isinstance(success, bool):
                     raise Exception('Client::_do_command - OK message success not valid value - %s ' % message)
-                success = bool(success)
 
                 msg = message[3]
-                self._on_ok(event_id, success, msg)
+                self._on_ok(self, event_id, success, msg)
             else:
                 logging.debug('Client::_do_command - OK message - %s' % message)
         except Exception as e:
@@ -368,6 +374,10 @@ class Client:
         def cleanup():
             self.unsubscribe(sub_id)
 
+        # if not connected don't even bother trying to sub
+        if not self.connected:
+            raise QueryLostConnectionException('Client::query - not connected to relay')
+
         sub_id = self.subscribe(filters=filters, eose_func=my_done)
 
         sleep_time = 0.1
@@ -375,13 +385,14 @@ class Client:
         con_count = self._connected_count
 
         while is_done is False:
-            await asyncio.sleep(sleep_time)
             if con_count != self._connected_count:
                 raise QueryLostConnectionException('Client::query - lost connection during query')
-            total_time += sleep_time
             if ret is None and timeout and total_time >= timeout:
                 cleanup()
                 raise QueryTimeoutException('Client::query timeout- %s' % self.url)
+
+            await asyncio.sleep(sleep_time)
+            total_time += sleep_time
 
         cleanup()
         return ret
@@ -459,7 +470,6 @@ class Client:
 
         # it's been some time since we saw a new event so fire the EOSE event
         self._on_message(['EOSE', sub_id])
-
 
     def unsubscribe(self, sub_id):
         if not self.have_sub(sub_id):
@@ -560,9 +570,12 @@ class Client:
     def set_on_notice(self, on_notice):
         self._on_notice = on_notice
 
+    def set_on_ok(self, on_ok):
+        self._on_ok = on_ok
+
     async def __aenter__(self):
         asyncio.create_task(self.run())
-        await self.wait_connect()
+        await self.wait_connect(timeout=self._timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -593,6 +606,7 @@ class ClientPool:
                  on_status: Callable = None,
                  on_eose: Callable = None,
                  on_notice: Callable = None,
+                 timeout: int = None,
                  **kargs
                  ):
 
@@ -630,6 +644,11 @@ class ClientPool:
                 self.add(c_client)
             except Exception as e:
                 logging.debug('ClientPool::__init__ - %s' % e)
+
+        # this is the timeout used when using the with context manager, if
+        # no client has connected after timeout then we'll error
+        # if None we'll just wait forever until a client connects
+        self._timeout = timeout
 
     def add(self, client, auto_start=False) -> Client:
         """
@@ -811,7 +830,7 @@ class ClientPool:
             client_info = self._clients[url]
             if client_info['task'] is None:
                 client_info['task'] = asyncio.create_task(client_info['client'].run())
-                await client_info['client'].wait_connect()
+                # await client_info['client'].wait_connect()
 
         self._state = RunState.running
         # now just hang around until state is changed to stopping
@@ -924,17 +943,13 @@ class ClientPool:
                 except Exception as e:
                     logging.debug(e)
 
-    async def wait_started(self):
-        while self._state != RunState.running:
+    async def wait_connect(self, timeout=None):
+        wait_time = 0
+        while not self.connected:
             await asyncio.sleep(0.1)
-            if self._state in (RunState.stopping, RunState.stopped):
-                raise Exception('ClientPool::wait_started - bad state when waiting for ClientPool to start, state=%s' % self._state)
-
-    async def wait_connect(self):
-        # so we can switch in a Client Pool where we have used a Client
-        # probably need to look at this because a single realy not connecting is going to result in
-        # getting stuck at start
-        await self.wait_started()
+            wait_time += 0.1
+            if timeout and int(wait_time) >= timeout:
+                raise ConnectionError('ClientPool::wait_connect timed out waiting for connection after %ss' % timeout)
 
     def do_event(self, client: Client, sub_id: str, evt):
 
@@ -981,7 +996,7 @@ class ClientPool:
 
     async def __aenter__(self):
         asyncio.create_task(self.run())
-        await self.wait_started()
+        await self.wait_connect(self._timeout)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

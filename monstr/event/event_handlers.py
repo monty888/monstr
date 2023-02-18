@@ -4,7 +4,7 @@ if TYPE_CHECKING:
     from monstr.ident.profile import Profile
     from monstr.client.client import Client
     from monstr.settings.handler import Settings
-
+import asyncio
 import copy
 import json
 import time
@@ -14,7 +14,7 @@ from functools import lru_cache
 from monstr.event.event import Event, EventTags
 from monstr.client.event_handlers import EventHandler
 from monstr.util import util_funcs
-from monstr.event.persist import ClientEventStoreInterface
+from monstr.event.persist import AEventStoreInterface, ClientEventStoreInterface
 from monstr.spam_handlers.spam_handlers import SpamHandlerInterface
 
 
@@ -45,11 +45,10 @@ class StoreEventHandler(EventHandler):
 
     def __init__(self,
                  store: ClientEventStoreInterface,
-                 max_insert_batch=500,
                  spam_handler: SpamHandlerInterface = None):
         self._store = store
-        self._max_insert_batch = max_insert_batch
         self._spam_handler = spam_handler
+        self._tasks = set()
 
         # change this shit - the spam handler should probably be just another acceptor ?
         super().__init__(event_acceptors=[])
@@ -76,17 +75,12 @@ class StoreEventHandler(EventHandler):
         })
 
     def do_event(self, client: Client, sub_id, evt: [Event]):
-        def get_store_func(the_chunk):
-            def the_func():
-                self._store.add_event_relay(the_chunk, client.url)
-            return the_func
-
-        for c_evt_chunk in util_funcs.chunk(evt, self._max_insert_batch):
-            # de-spam chunk
-            c_evt_chunk = [c_evt for c_evt in c_evt_chunk if not self.is_spam(c_evt)]
-
-            util_funcs.retry_db_func(get_store_func(c_evt_chunk))
-            time.sleep(0.1)
+        if isinstance(self._store, AEventStoreInterface):
+            n_task = asyncio.create_task(self._store.add_event(evt))
+            n_task.add_done_callback(self._tasks.discard)
+            self._tasks.add(n_task)
+        else:
+            self._store.add_event(evt)
 
     def is_spam(self, evt: Event):
         return self._spam_handler and self._spam_handler.is_spam(evt)
@@ -291,6 +285,12 @@ class StoreEventHandler(EventHandler):
     @property
     def store(self):
         return self._store
+
+    # if using an async event store then this will wait until they're all complete
+    # otherwise it'll return immediately
+    async def wait_tasks(self):
+        while self._tasks:
+            await asyncio.sleep(0.1)
 
 
 class NetworkedStoreEventHandler(StoreEventHandler):

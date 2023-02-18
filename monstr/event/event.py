@@ -93,6 +93,8 @@ class Event:
     KIND_DELETE = 5
     # NIP 25 reactions https://github.com/nostr-protocol/nips/blob/master/25.md
     KIND_REACTION = 7
+    # NIP 58 badges https://github.com/nostr-protocol/nips/pull/229
+    KIND_BADGE = 8
     # NIP 28 events for group chat
     # https://github.com/nostr-protocol/nips/blob/af6893145f9a4a63be3d90beffbcfd4d90e872ae/28.md
     KIND_CHANNEL_CREATE = 40
@@ -374,6 +376,15 @@ class Event:
                 break
 
         return ret
+
+    def is_replacable(self) -> bool:
+        # true if replacable as defined by NIP16 https://github.com/nostr-protocol/nips/blob/master/16.md
+        return self.kind in (Event.KIND_META, Event.KIND_CONTACT_LIST) or \
+               (10000 <= self.kind < 20000)
+
+    def is_ephemeral(self) -> bool:
+        # true if emphereal as defined by NIP16
+        return 20000 <= self.kind < 30000
 
     @property
     def tags(self):
