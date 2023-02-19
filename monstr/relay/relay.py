@@ -27,15 +27,20 @@ class Relay:
         implements monstr relay protocol
         NIP-01      -   basic protocol
                         https://github.com/fiatjaf/nostr/blob/master/nips/01.md
+
         NIP-02      -   contact list
                         https://github.com/fiatjaf/nostr/blob/master/nips/02.md
+
         NIP-09      -   event deletions depends on the store
                         delete_mode=DeleteMode.DEL_FLAG probbably best option as this will mark the event as deleted
                         but also it won't be possible to repost.
                         https://github.com/fiatjaf/nostr/blob/master/nips/09.md
-        NIP-11      -   TODO: Relay Information Document
+
+        NIP-11      -   basic relay information, the has added more information that you can give
+                        but not yet implemnted
                         https://github.com/fiatjaf/nostr/blob/master/nips/11.md
-        NIP-12          generic querie tags, todo but should be easy.... test with shared
+
+        NIP-12          generic query tags
                         https://github.com/fiatjaf/nostr/blob/master/nips/12.md
 
         NIP-15      -   send 'EOSE' msg after sending the final event for a subscription
@@ -43,6 +48,12 @@ class Relay:
 
         NIP-16      -   ephemeral and replaceable events, depends on the store
                         https://github.com/nostr-protocol/nips/blob/master/16.md
+
+        NIP-20      -   Command Results - more info when submitting events rather then having to rely
+                        on seeing added via sub. Enabled if ack_events is True which is the default
+                        Note we don't return duplicate: if we alrady have event it'll just get ok saved as we let the db
+                        deal with it.
+                        https://github.com/nostr-protocol/nips/blob/master/20.md
 
         for NIPS n,n... whats actually being implemented will be decided by the store/properties it was created with
         e.g. delete example....
@@ -119,14 +130,17 @@ class Relay:
             nips.append(9)
         if self._nip16:
             nips.append(16)
+        if self._ack_events:
+            nips.append(20)
 
         nips.sort()
 
         logging.info('Relay::__init__ maxsub=%s '
-                     'EOSE enabled(NIP15)=%s, Deletes(NIP9)=%s, Event treatment(NIP16)=%s' % (self._max_sub,
-                                                                                              self._nip15,
-                                                                                              self._nip09,
-                                                                                              self._nip16))
+                     'EOSE enabled(NIP15)=%s, Deletes(NIP9)=%s, Event treatment(NIP16)=%s, Commands(NIP20)=%s' % (self._max_sub,
+                                                                                                                  self._nip15,
+                                                                                                                  self._nip09,
+                                                                                                                  self._nip16,
+                                                                                                                  self._ack_events))
 
 
         self._relay_information = {
@@ -171,24 +185,8 @@ class Relay:
         self._server.add_routes(my_routes)
 
 
-    def start(self, host='localhost', port=8080, end_point='/', routes=None):
-        """
-
-        :param host:
-        :param port:
-        :param end_point:
-        http://host:port/endpoint
-        :return:
-        """
-        logging.info('Relay::start %s:%s%s' % (host, port, end_point))
-        self._starter(host, port, end_point, routes)
-        # starting the relay is going to block... won't return until ctrl-c or something
-        web.run_app(host=self._host,
-                    port=self._port,
-                    app=self._server)
-
-    async def start_background(self, host='localhost', port=8080, end_point='/', routes=None):
-        logging.info('Relay::start %s:%s%s in background' % (host, port, end_point))
+    async def start(self, host='localhost', port=8080, end_point='/', routes=None, block=True):
+        logging.info('Relay::start %s:%s%s block=%s' % (host, port, end_point, block))
 
         self._starter(host, port, end_point, routes)
 
@@ -198,6 +196,19 @@ class Relay:
                            host=self._host,
                            port=self._port)
         await site.start()
+
+        # probably there is a better way to do this but was having problems mixing web.run_app with
+        # async db etc... this does mean that start and start_background are now the same
+        if block:
+            while True:
+                await asyncio.sleep(0.1)
+
+    async def start_background(self, host='localhost', port=8080, end_point='/', routes=None):
+        # remove this method eventually
+        await self.start(host=host,
+                         port=port,
+                         end_point=end_point,
+                         block=False)
 
     @property
     def url(self):
@@ -286,7 +297,9 @@ class Relay:
         except NostrNoticeException as ne:
             err = ['NOTICE', str(ne)]
         except NostrCommandException as nc:
-            err = nc.get_data()
+            # NIP20 cmds only sent if ack_events is True - which it is by default
+            if self._ack_events:
+                err = nc.get_data()
 
 
         await self._do_send(ws=ws,
@@ -328,10 +341,9 @@ class Relay:
         # do the subs
         await self._check_subs(evt)
 
-        if self._ack_events:
-            raise NostrCommandException(event_id=evt.id,
-                                        success=saved,
-                                        message='')
+        raise NostrCommandException(event_id=evt.id,
+                                    success=saved,
+                                    message='')
 
 
 

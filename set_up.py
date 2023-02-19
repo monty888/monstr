@@ -7,5 +7,5 @@ setup(name='monstr',
       author='Monty888',
       author_email='Monty888@protonmail.com',
       license='MIT',
-      packages=['monstr'],
+      packages=['nostr'],
       zip_safe=False)

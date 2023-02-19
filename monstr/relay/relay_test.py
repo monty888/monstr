@@ -22,18 +22,21 @@ class RelayTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         self._relay = None
+        self._client:Client = None
 
         self._relay = Relay(store=RelayMemoryEventStore(),
                             enable_nip15=True)
 
-        await self._relay.start_background(port=8888)
+        await self._relay.start_background(port=8887)
 
         # make sure relay is accepting before allowing on
         while not self._relay.started:
             time.sleep(0.1)
 
-        self._client = Client('ws://localhost:8888').start()
-        await asyncio.sleep(2)
+        self._client = Client('ws://localhost:8887')
+        asyncio.create_task(self._client.run())
+        await self._client.wait_connect(timeout=5)
+
 
         # key pair for tests
         k = Keys.get_new_key_pair()
@@ -71,12 +74,12 @@ class RelayTestCase(unittest.IsolatedAsyncioTestCase):
         # how many event we're going to test with
         event_count = 10
 
-        self._client.wait_connect()
         self._post_events(event_count)
-        ret = self._client.query([{}])
+        ret = await self._client.query([{}])
 
         assert len(ret) == event_count
         print('test sub done')
+
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
