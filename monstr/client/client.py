@@ -9,7 +9,6 @@ from typing import Callable
 import logging
 import aiohttp
 import asyncio
-import websockets
 import json
 import random
 from hashlib import md5
@@ -131,38 +130,36 @@ class Client:
             try:
                 if self._relay_info is None:
                     await self.get_relay_information()
+                async with aiohttp.ClientSession() as my_session:
+                    async with my_session.ws_connect(self._url,
+                                                     timeout=self._timeout,
+                                                     heartbeat=self._ping_timeout) as ws:
 
-                async with websockets.connect(self._url,
-                                              open_timeout=self._timeout,
-                                              close_timeout=self._timeout,
-                                              ping_interval=self._ping_timeout,
-                                              ping_timeout=self._ping_timeout) as ws:
+                        self._is_connected = True
+                        self._connected_count += 1
+                        self._last_err = None
+                        self._fail_count = 0
+                        self._last_connect = datetime.now()
 
-                    self._is_connected = True
-                    self._connected_count += 1
-                    self._last_err = None
-                    self._fail_count = 0
-                    self._last_connect = datetime.now()
+                        reconnect_delay = 1
+                        logging.debug('Client::run connected %s' % self._url)
+                        if self._on_connect:
+                            self._on_connect(self)
 
-                    reconnect_delay = 1
-                    logging.debug('Client::run connected %s' % self._url)
-                    if self._on_connect:
-                        self._on_connect(self)
+                        self._do_status()
 
-                    self._do_status()
+                        consumer_task = asyncio.create_task(self._my_consumer(ws))
+                        producer_task = asyncio.create_task(self._my_producer(ws))
+                        terminate_task = asyncio.create_task(self.my_terminate(ws))
 
-                    consumer_task = asyncio.create_task(self._my_consumer(ws))
-                    producer_task = asyncio.create_task(self._my_producer(ws))
-                    terminate_task = asyncio.create_task(self.my_terminate(ws))
+                        done, pending = await asyncio.wait([consumer_task,
+                                                           producer_task,
+                                                           terminate_task],
+                                                           return_when=asyncio.FIRST_EXCEPTION)
 
-                    done, pending = await asyncio.wait([consumer_task,
-                                                       producer_task,
-                                                       terminate_task],
-                                                       return_when=asyncio.FIRST_EXCEPTION)
-
-                    # clean up
-                    for task in pending:
-                        task.cancel()
+                        # clean up
+                        for task in pending:
+                            task.cancel()
 
             except ConnectionError as ce:
                 self._last_err = str(ce)
@@ -197,12 +194,9 @@ class Client:
             if timeout and int(wait_time) >= timeout:
                 raise ConnectionError('Client::wait_connect timed out waiting for connection after %ss' % timeout)
 
-    async def _my_consumer(self, ws):
-        async for msg in ws:
-            try:
-                self._on_message(json.loads(msg))
-            except JSONDecodeError as je:
-                logging.debug('Client::_my_consumer unable to decode msg - %s' % msg)
+    async def _my_consumer(self, ws: aiohttp.ClientWebSocketResponse):
+        while True:
+            self._on_message(await ws.receive_json())
         raise ConnectionError('Client::_my_consumer - server has closed the websocket')
 
     def _on_message(self, message):
@@ -319,14 +313,14 @@ class Client:
 
         return ret
 
-    async def _my_producer(self, ws):
+    async def _my_producer(self, ws: aiohttp.ClientWebSocketResponse):
         while True:
             cmd = await self._publish_q.get()
-            await ws.send(cmd)
+            await ws.send_str(cmd)
             # TODO - here we could add an event that message got sent for example in case of event we'd know that
             #  it'd been senf at this point
 
-    async def my_terminate(self, ws):
+    async def my_terminate(self, ws: aiohttp.ClientWebSocketResponse):
         ws_closed = False
         while not ws_closed:
             await asyncio.sleep(0.1)

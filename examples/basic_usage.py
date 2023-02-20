@@ -1,3 +1,4 @@
+import json
 import logging
 import asyncio
 from monstr.client.client import Client, ClientPool
@@ -69,11 +70,13 @@ async def make_post(relay=DEFAULT_RELAY):
         c.publish(n_msg)
         await asyncio.sleep(1)
 
+
 async def main():
     await one_off_query_client_with()
     await one_off_query_manual()
     await simple_sub()
     await make_post()
+    # await test_aiohttpws()
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)

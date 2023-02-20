@@ -7,4 +7,3 @@ cryptography==39.0.1
 psycopg2==2.9.5
 secp256k1==0.14.0
 setuptools==67.3.2
-websockets==10.4

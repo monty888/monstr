@@ -5,6 +5,8 @@
 
 """
 from __future__ import annotations
+
+import hashlib
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from monstr.ident.event_handlers import ProfileEventHandlerInterface
@@ -35,17 +37,42 @@ class DeduplicateAcceptor(EventAccepter):
         # de-duplicating of events for when we're connected to multiple relays
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
-        self._lock = BoundedSemaphore()
 
     def accept_event(self, evt: Event) -> bool:
         ret = False
-        with self._lock:
-            if evt.id not in self._duplicates:
-                self._duplicates[evt.id] = True
-                if len(self._duplicates) >= self._max_dedup:
-                    self._duplicates.popitem(last=False)
-                ret = True
+        if evt.id not in self._duplicates:
+            self._duplicates[evt.id] = True
+            if len(self._duplicates) >= self._max_dedup:
+                self._duplicates.popitem(last=False)
+            ret = True
         return ret
+
+
+class DuplicateContentAcceptor(EventAccepter):
+    def __init__(self, max_dedup=10000):
+        # de-duplicating of events for when we're connected to multiple relays
+        self._duplicates = OrderedDict()
+        self._max_dedup = max_dedup
+
+    def accept_event(self, evt: Event) -> bool:
+        ret = False
+        key = hashlib.md5(evt.content.encode('utf8')).hexdigest()
+        logging.debug(key)
+        if key not in self._duplicates:
+            self._duplicates[key] = True
+            if len(self._duplicates) >= self._max_dedup:
+                self._duplicates.popitem(last=False)
+            ret = True
+        return ret
+
+
+class NotOnlyNumbersAcceptor(EventAccepter):
+
+    def __init__(self):
+        pass
+
+    def accept_event(self, evt: Event) -> bool:
+        return not evt.content.replace(' ','').isdigit()
 
 
 class LengthAcceptor(EventAccepter):

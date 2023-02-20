@@ -208,6 +208,7 @@ class Relay:
         await self.start(host=host,
                          port=port,
                          end_point=end_point,
+                         routes=routes,
                          block=False)
 
     @property
@@ -363,13 +364,15 @@ class Relay:
                     tasks.add(n_task)
                     n_task.add_done_callback(tasks.discard)
 
-
     async def _do_sub(self, req_json, ws):
         logging.info('subscription requested - %s' % req_json)
         # get sub_id and filter fro the json
         if len(req_json) <= 1:
             raise NostrNoticeException('REQ command missing sub_id')
         sub_id = req_json[1]
+        if not isinstance(sub_id, str):
+            raise NostrNoticeException('sub id should be string, received %s' % type(sub_id))
+
         # if we don't get a filter default to {} rather than error?
         # did this because loquaz doesnt supply so assuming this is permited
         filter = {}
