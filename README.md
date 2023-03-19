@@ -20,7 +20,7 @@ Note: developed against python 3.8
 
 ## Resolving Installation Issues
 
-1. If `secp256k1` fails to install, make sure you have these installed, make sure pip has wheel `pip install wheel`
+1. If `secp256k1` fails to install, try `brew install automake pkg-config libffi gmp` and  make sure pip has wheel `pip install wheel`
 
 
 # use 
