@@ -14,7 +14,7 @@ python code for working with nostr
 > source venv/bin/activate  
 > pip install -r requirements.txt  
 > -- probably required to run examples else nostr module won't be found  
-> export PYTHONPATH="$PYTHONPATH:./"
+> pip install -e .  # install the package in editable mode
 
 Note: developed against python 3.8
 
