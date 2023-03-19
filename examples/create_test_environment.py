@@ -3,6 +3,7 @@
         if you supply some pub keys then it'll
 
 """
+import os
 import logging
 import signal
 import asyncio
@@ -16,8 +17,11 @@ from monstr.util import util_funcs
 from aiohttp import web
 from pathlib import Path
 
-WORK_DIR = '%s/.nostrpy/' % Path.home()
-DB = WORK_DIR+'test_env.db'
+WORK_DIR = os.getcwd()
+
+#WORK_DIR = '%s/.nostrpy/' % Path.home()
+DB = WORK_DIR + '/test_env.db'
+
 
 async def run_relay():
 
