@@ -259,9 +259,12 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
             # add placeholders for any we don't have if createmissing
             # this does't include invalid keys
+
             if create_missing:
+                p: Profile
+                have = set([p.public_key for p in ret])
                 for k in to_fetch:
-                    if k not in self:
+                    if k not in have:
                         n_p = self.create_missing(k)
                         ret.append(n_p)
                         self._cache[k] = n_p

@@ -437,6 +437,15 @@ class Event:
     def created_at(self) -> datetime:
         return util_funcs.ticks_as_date(self._created_at)
 
+    @created_at.setter
+    def created_at(self, dt):
+        if dt is None or not isinstance(dt, (datetime, int)):
+            raise ValueError('Event::created_at: invalid value for created_at - %s' % dt)
+        elif isinstance(dt, datetime):
+            self._created_at = util_funcs.date_as_ticks(self._created_at)
+        elif isinstance(dt, int):
+            self._created_at = dt
+
     @property
     def created_at_ticks(self):
         return self._created_at
