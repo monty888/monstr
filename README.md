@@ -16,6 +16,8 @@ $ python3 -m venv venv
 $ source venv/bin/activate
 $ # Updated pip version for most up-to-date package discovery
 $ python3 -m pip install --upgrade pip
+$ # install wheel helper, if needed.
+$ pip install wheel
 $ # pip install '.' points to the setup.py
 $ # and installs the package with its requirements.
 $ pip install -r requirements.txt or pip install '.'
