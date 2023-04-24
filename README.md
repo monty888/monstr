@@ -8,14 +8,33 @@ python code for working with nostr
 * Keys for working with and converting between hex/npub/nsec
 
 # install
-```
-$ git clone https://github.com/monty888/monstr.git  
-$ cd monstr  
-$ python3 -m venv venv  
-$ source venv/bin/activate  
-$ pip install -r requirements.txt  
-$ -- probably required to run examples else nostr module won't be found  
+```sh
+$ git clone https://github.com/monty888/monstr.git
+$ cd monstr
+$ brew install postgresql automake pkg-config libtool libffi
+$ python3 -m venv venv
+$ source venv/bin/activate
+$ # Updated pip version for most up-to-date package discovery
+$ python3 -m pip install --upgrade pip
+$ # install wheel helper, if needed.
+$ pip install wheel
+$ # pip install '.' points to the setup.py
+$ # and installs the package with its requirements.
+$ pip install -r requirements.txt or pip install '.'
+$ # probably required to run examples else nostr module won't be found
 $ export PYTHONPATH="$PYTHONPATH:./"
+```
+
+# test `monstr` package import
+```py
+# create a new python shell
+python3
+>> import monstr
+>> from monstr.encrypt import Keys
+>> test = Keys()
+>> Keys.is_valid_key(test.private_key_hex())
+True
+>>
 ```
 
 Note: developed against python 3.8
