@@ -11,7 +11,11 @@ python code for working with nostr
 ```sh
 $ git clone https://github.com/monty888/monstr.git
 $ cd monstr
-$ brew install postgresql automake pkg-config libtool libffi
+$ # may need to install postgres - FIXME - add import [postgres] as optional as mainly we don't use
+$ # and correct code not to fail if psycog2 lib isn't available
+$ # on linux
+$ sudo apt install postgresql automake pkg-config libtool
+$ # for mac? brew install postgresql automake pkg-config libtool libffi
 $ python3 -m venv venv
 $ source venv/bin/activate
 $ # Updated pip version for most up-to-date package discovery
