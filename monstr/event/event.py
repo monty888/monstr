@@ -103,6 +103,9 @@ class Event:
     KIND_CHANNEL_HIDE = 43
     KIND_CHANNEL_MUTE = 44
 
+    # a raw bitcoin transaction
+    KIND_BTC_TX = 28333
+
     @staticmethod
     def from_JSON(evt_json):
         """
