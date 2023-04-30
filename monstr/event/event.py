@@ -103,6 +103,9 @@ class Event:
     KIND_CHANNEL_HIDE = 43
     KIND_CHANNEL_MUTE = 44
 
+    # a wrapped event to be republished see https://github.com/motorina0/nips/blob/republish_events/705.md
+    KIND_REPUBLISH = 20001
+
     # a raw bitcoin transaction
     KIND_BTC_TX = 28333
 
