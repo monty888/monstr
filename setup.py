@@ -1,9 +1,15 @@
 from setuptools import setup, find_packages
 
+# read the contents of your README file
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setup(name='monstr',
-      version='0.1',
+      version='0.1.1',
       packages=find_packages(),
-      description='A module for working with monstr',
+      description='Monstr: Python Nostr module. Python code for working with nostr.',
+      long_description=long_description,
+      long_description_content_type='text/markdown',
       url='https://github.com/monty888/monstr',
       author='Monty888',
       author_email='Monty888@protonmail.com',
