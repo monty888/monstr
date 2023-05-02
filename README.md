@@ -1,6 +1,10 @@
 # monstr
 
-python code for working with nostr
+Monstr: Python Nostr module. Python code for working with nostr.
+
+```sh
+pip install monstr
+```
 
 * A basic relay implementation for testing against locally
 * Client for working with a single relay
@@ -78,7 +82,6 @@ Note: developed against python 3.8
 
 for more see /monstr/examples
 
-# TODO
+# Contribute:
 
-Eventually try to work how the ... python packages work, for now just copy in the folder and install the requirements.
-The examples folder is not required.
+-- TODO
