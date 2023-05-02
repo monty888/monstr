@@ -464,13 +464,13 @@ class Event:
     def content(self):
         return self._content
 
-    def decrypted_content(self, priv_key, pub_key):
+    def decrypted_content(self, priv_key, pub_key, check_kind=True):
         """
         dycrypts a NIP04 encoded event...
         :param priv_key:
         :return:
         """
-        if self.kind != Event.KIND_ENCRYPT:
+        if check_kind and self.kind not in (Event.KIND_ENCRYPT, Event.KIND_REPUBLISH):
             raise Exception('attempt to decrypt non encrypted event %s' % self.id)
 
         my_enc = SharedEncrypt(priv_key)
