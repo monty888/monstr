@@ -23,7 +23,15 @@ class ProfileFileAlias:
             'profile_name': profile_name
         })
         if matches:
+            # first match
             ret = matches[0]
+            # prefer a exact match if found
+            c_p: Profile
+            for c_p in matches:
+                if c_p.profile_name == profile_name:
+                    ret = c_p
+                    break
+
         return ret
 
     def new_profile(self, profile_name:str,
