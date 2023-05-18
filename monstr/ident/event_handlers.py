@@ -270,7 +270,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                         self._cache[k] = n_p
         return ProfileList(ret)
 
-    async def load_contacts(self, p: Profile):
+    async def load_contacts(self, p: Profile) -> ContactList:
         p_contacts = await self._fetch_contacts(pub_ks=[p.public_key])
         if p_contacts:
             p.contacts = p_contacts[0]
@@ -278,3 +278,5 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         else:
             p.contacts = ContactList(contacts=[],
                                      owner_pub_k=p.public_key)
+
+        return p.contacts
