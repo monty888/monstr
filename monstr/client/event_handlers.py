@@ -27,7 +27,10 @@ from monstr.event.event import Event
 class EventAccepter(ABC):
 
     @abstractmethod
-    def accept_event(self, evt: Event) -> bool:
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
         'True/False if the event will be accepted'
 
 
@@ -38,7 +41,10 @@ class DeduplicateAcceptor(EventAccepter):
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
 
-    def accept_event(self, evt: Event) -> bool:
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
         ret = False
         if evt.id not in self._duplicates:
             self._duplicates[evt.id] = True
@@ -54,7 +60,10 @@ class DuplicateContentAcceptor(EventAccepter):
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
 
-    def accept_event(self, evt: Event) -> bool:
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
         ret = False
         key = hashlib.md5(evt.content.encode('utf8')).hexdigest()
         logging.debug(key)
@@ -71,7 +80,10 @@ class NotOnlyNumbersAcceptor(EventAccepter):
     def __init__(self):
         pass
 
-    def accept_event(self, evt: Event) -> bool:
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
         return not evt.content.replace(' ','').isdigit()
 
 
@@ -81,7 +93,10 @@ class LengthAcceptor(EventAccepter):
         self._min = min
         self._max = max
 
-    def accept_event(self, evt: Event) -> bool:
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
         ret = True
         msg_len = len(evt.content)
         if self._min and msg_len < self._min:
@@ -98,10 +113,13 @@ class EventHandler(ABC):
             event_acceptors = [event_acceptors]
         self._event_acceptors = event_acceptors
 
-    def accept_event(self, evt: Event):
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
         ret = True
         for accept in self._event_acceptors:
-            if not accept.accept_event(evt):
+            if not accept.accept_event(the_client, sub_id, evt):
                 ret = False
                 break
 
@@ -110,7 +128,7 @@ class EventHandler(ABC):
     @abstractmethod
     def do_event(self, the_client: Client, sub_id, evt: Event):
         """
-        if self.accept_event(evt):
+        if not self.accept_event(the_client, sub_id, evt):
             do_something
         or just do_something if no accept criteria
         """
@@ -136,7 +154,7 @@ class PrintEventHandler(EventHandler):
         self._view_on = False
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
-        if not self.accept_event(evt):
+        if not self.accept_event(the_client, sub_id, evt):
             return
 
         if self._view_on:
