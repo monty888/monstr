@@ -16,9 +16,11 @@ if TYPE_CHECKING:
 
 import json
 import re
+import aiohttp
 from copy import copy
 from json import JSONDecodeError
 import logging
+from cachetools import TTLCache
 from monstr.event.event import Event
 from datetime import datetime
 from monstr.util import util_funcs
@@ -26,6 +28,10 @@ from monstr.encrypt import Keys
 
 
 class UnknownProfile(Exception):
+    pass
+
+
+class NIP5Error(Exception):
     pass
 
 
@@ -722,157 +728,85 @@ class ContactList:
     def __copy__(self):
         return ContactList(self._contacts, self._owner_pub_k)
 
-# class ProfileEventHandler:
-#     """
-#         access profile, contacts through here rather than via the store, at the moment we keep everything in memory
-#         but in future where this might not be possible it should be transparent to caller that we had to fetch from store...
-#
-#     """
-#     def __init__(self,
-#                  profile_store: 'ProfileStoreInterface',
-#                  on_profile_update=None,
-#                  on_contact_update=None):
-#
-#         self._store = profile_store
-#         self._profiles = self._store.select_profiles()
-#         self._on_profile_update = on_profile_update
-#         self._on_contact_update = on_contact_update
-#
-#     # update locally rather than via meta 0 event
-#     # only used to link prov_k or add/change profile name
-#     def do_update_local(self, p: Profile):
-#         if self._profiles.lookup_pub_key(p.public_key):
-#             self._profiles.update(p)
-#             self._store.update_profile_local(p)
-#             self._store.update(p)
-#         else:
-#             self._profiles.add(p)
-#             self._store.add(p)
-#
-#     def do_event(self, sub_id, evt: Event, relay):
-#         c_profile: Profile
-#         evt_profile: Profile
-#         pubkey = evt.pub_key
-#
-#         if evt.kind == Event.KIND_META:
-#
-#             c_profile = self._profiles.lookup_pub_key(pubkey)
-#             evt_profile = Profile(pub_k=pubkey, attrs=evt.content, update_at=evt.created_at_ticks)
-#
-#             # we only need to do something if the profile is newer than we already have
-#             if c_profile is None or c_profile.update_at < evt_profile.update_at:
-#                 # not sure about this... probably OK most of the time...
-#                 if c_profile:
-#                     self._store.update(evt_profile)
-#                     self._profiles.update(evt_profile)
-#                 else:
-#                     self._store.add(evt_profile)
-#                     self._profiles.add(evt_profile)
-#
-#                 # if owner gave us an on_update call with pubkey that has changed, they may want to do something...
-#                 if self._on_profile_update:
-#                     self._on_profile_update(evt_profile, c_profile)
-#
-#         elif evt.kind == Event.KIND_CONTACT_LIST:
-#             # it's not required that we have a profile to import the events
-#             # though it might be hard to get to the contacts later if we don't as (until we have a profile)
-#             # as it won't be handing off anything
-#             existing_contacts = ContactList(contacts=self._store.select_contacts({'owner': pubkey}),
-#                                             owner_pub_k=pubkey)
-#
-#             if existing_contacts.updated_at is None or existing_contacts.updated_at < evt.created_at_ticks:
-#                 c_profile = self._profiles.lookup_pub_key(pubkey)
-#
-#                 # now update
-#                 n_contacts = ContactList.create_from_event(evt)
-#                 self._store.set_contacts(n_contacts)
-#
-#                 # if we do have a profile this will force reload of contacts on next access
-#                 if c_profile:
-#                     c_profile.contacts = None
-#
-#                 # callback that we updated contacts
-#                 if self._on_contact_update:
-#                     self._on_contact_update(n_contacts, existing_contacts)
-#
-#     @property
-#     def profiles(self) -> ProfileList:
-#         return self._profiles
-#
-#     def set_on_update(self, on_update):
-#         self._on_update = on_update
-#
-#     def profile(self, pub_k):
-#         ret = self._profiles.lookup_pub_key(pub_k)
-#         return ret
-#
-#     def is_newer_profile(self, p: Profile):
-#         # return True if given profile is newer than what we have
-#         ret = False
-#         c_p = self.profile(p.public_key)
-#         if c_p is None or c_p.update_at < p.update_at:
-#             ret = True
-#         return ret
-#
-#     def is_newer_contacts(self, contacts: ContactList):
-#         # return True if given profile is newer than what we have
-#         ret = False
-#
-#         c_p = self.profile(contacts.owner_public_key)
-#         if c_p is None:
-#             existing = ContactList(contacts=self._store.select_contacts({'owner': contacts.owner_public_key}),
-#                                    owner_pub_k=contacts)
-#
-#         else:
-#             c_p.load_contacts(self._store)
-#             existing = c_p.contacts
-#
-#         if existing is None or existing.updated_at is None or existing.updated_at < contacts.updated_at:
-#             if existing.updated_at is None and len(contacts) == 0:
-#                 # check this... assumed that we have the contact but cant find any contacts for then
-#                 # which is the same as adding 0 len contacts ie nothing to do
-#                 pass
-#             else:
-#                 ret = True
-#
-#         return ret
 
-if __name__ == "__main__":
-    from monstr.util import util_funcs
-    from pathlib import Path
-    from monstr.client.client import Client
-    from monstr.client.event_handlers import PrintEventHandler
-    from monstr.ident.persist import SQLProfileStore
+class NIP5Helper:
+    """
+        helper class for checking nip5 validity
+        provides one of static methods and class based to check and keep cached
+    """
+    def __init__(self, cache=None):
+        if cache is None:
+            cache = TTLCache(ttl=60*60,
+                             maxsize=10000)
+        self._cache = cache
 
-    logging.getLogger().setLevel(logging.DEBUG)
-    nostr_db_file = '%s/.nostrpy/nostrb-client.db' % Path.home()
-    backup_dir = '/home/shaun/.nostrpy/'
-    my_db = util_funcs.create_sqlite_store(nostr_db_file)
-    profile_store = SQLProfileStore(my_db)
+    @staticmethod
+    async def check_nip5(nip5: str, pub_k: str):
+        """
 
-    def my_connect(the_client: Client):
-        the_client.subscribe(handlers=[PrintEventHandler(),
-                                       ProfileEventHandler(profile_store=profile_store)],
-                             filters={
-                                 'kinds': [Event.KIND_CONTACT_LIST, Event.KIND_META]
-                             }
-                             )
+        """
+        ret = False
+        try:
+            # get name and domain
+            name, domain = tuple(nip5.split('@'))
+        except IndexError as id:
+            raise NIP5Error(f'bad nip5url {nip5}')
 
-    c = Client('wss://monstr-pub.wellorder.net', on_connect=my_connect)
+        # construct url to nostr.json on server
+        url = f'https://{domain}/.well-known/nostr.json?name={name}'
 
-    c.start()
+        async with aiohttp.ClientSession(headers={
+            'Accept': 'application/json'
+        }) as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    try:
+                        nip5json = json.loads(await response.text())
+                        if nip5json['names']:
+                            ret = name in nip5json['names'] and nip5json['names'][name] == pub_k \
+                                  or '_' in nip5json['names'] and nip5json['names']['_'] == pub_k
 
 
+                    except JSONDecodeError as je:
+                        raise NIP5Error(f'nip5 fetch bad json - {response.content}')
 
+        return ret
 
+    @staticmethod
+    async def check_nip5_profile(p: Profile):
+        nip5 = p.get_attr('nip05')
+        ret = False
+        if nip5:
+            ret = await NIP5Helper.check_nip5(nip5=nip5,
+                                              pub_k=p.public_key)
+        return ret
 
-    # def my_start(the_client: Client):
-    #     the_client.subscribe(handlers=PersistEventHandler(SQLiteEventStore(nostr_db_file)))
+    async def is_valid(self, nip5: str, pub_k: str):
+        if pub_k in self._cache:
+            the_check = self._cache[pub_k]
+            if the_check['nip5'] == nip5:
+                print('cached value')
+                return the_check['value']
 
-    # my_client = Client('wss://monstr-pub.wellorder.net', on_connect=my_start).start()
+        # not cache or the nip5 text changed so recheck
+        ret = await NIP5Helper.check_nip5(nip5=nip5,
+                                          pub_k=pub_k)
 
-    # ContactList.import_from_events(SQLLiteStore(nostr_db_file), SQLProfileStore(SQLiteDatabase(nostr_db_file)))
-    # Profile.import_from_file('/home/shaun/.nostrpy/local_profiles.csv',SQLProfileStore(SQLiteDatabase(nostr_db_file)))
+        # cache for next ref
+        self._cache[pub_k] = {
+            'nip5': nip5,
+            'value': ret
+        }
+
+        return ret
+
+    async def is_valid_profile(self, p: Profile):
+        ret = False
+        nip5 = p.get_attr('nip05')
+        if nip5:
+            ret = self.is_valid(nip5=nip5,
+                                pub_k=p.public_key)
+        return ret
 
 
 
