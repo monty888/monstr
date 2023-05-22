@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from monstr.ident.event_handlers import ProfileEventHandlerInterface
     from monstr.client.client import Client
 import asyncio
+from datetime import datetime
 from monstr.ident.profile import ProfileList, Profile, Contact, ContactList
 from abc import ABC, abstractmethod
 import base64
@@ -171,6 +172,34 @@ class PrintEventHandler(EventHandler):
         print('%s: %s - %s' % (evt.created_at,
                                util_funcs.str_tails(profile_name, 4),
                                evt.content))
+
+
+class LastEventHandler:
+    """
+        use to keep track of the last time we received events for a given relay
+    """
+    def __init__(self):
+        self._url_time_map = {}
+
+    def do_event(self, the_client: Client, sub_id, evt: Event):
+        self._url_time_map[the_client.url] = datetime.now()
+
+    @staticmethod
+    def _client_url(the_client) -> str:
+        ret = the_client
+        if not isinstance(the_client, str):
+            ret = the_client.url
+        return ret
+
+    def get_last_event_dt(self, the_client: Client) -> datetime:
+        ret = None
+        url = LastEventHandler._client_url(the_client)
+        if url in self._url_time_map:
+            ret = self._url_time_map[url]
+        return ret
+
+    def set_last_event_dt(self, the_client: Client, dt: datetime):
+        self._url_time_map[LastEventHandler._client_url(the_client)] = dt
 
 
 class DecryptPrintEventHandler(PrintEventHandler):

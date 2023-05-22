@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 import json
 import re
 import aiohttp
+from aiohttp import ClientConnectorError
 from copy import copy
 from json import JSONDecodeError
 import logging
@@ -45,6 +46,18 @@ class Profile:
                           attrs=evt.content,
                           update_at=evt.created_at_ticks)
         return ret
+
+    @staticmethod
+    def get_nip5info(nip5_text) -> tuple:
+        name, domain = None, None
+        try:
+            if nip5_text:
+                # get name and domain
+                name, domain = tuple(nip5_text.split('@'))
+        except ValueError as ve:
+            raise NIP5Error(f'bad nip5url {nip5_text}')
+
+        return name, domain
 
     def __init__(self, priv_k=None, pub_k=None, attrs=None, profile_name=None,
                  update_at: int = None):
@@ -746,46 +759,47 @@ class NIP5Helper:
 
         """
         ret = False
-        try:
-            # get name and domain
-            name, domain = tuple(nip5.split('@'))
-        except IndexError as id:
-            raise NIP5Error(f'bad nip5url {nip5}')
+
+        name, domain = Profile.get_nip5info(nip5)
 
         # construct url to nostr.json on server
         url = f'https://{domain}/.well-known/nostr.json?name={name}'
 
-        async with aiohttp.ClientSession(headers={
-            'Accept': 'application/json'
-        }) as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    try:
-                        nip5json = json.loads(await response.text())
-                        if nip5json['names']:
-                            ret = name in nip5json['names'] and nip5json['names'][name] == pub_k \
-                                  or '_' in nip5json['names'] and nip5json['names']['_'] == pub_k
+        try:
+            async with aiohttp.ClientSession(headers={
+                'Accept': 'application/json'
+            }) as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        try:
+                            nip5json = json.loads(await response.text())
+                            if nip5json['names']:
+                                ret = name in nip5json['names'] and nip5json['names'][name] == pub_k \
+                                      or '_' in nip5json['names'] and nip5json['names']['_'] == pub_k
 
+                        except JSONDecodeError as je:
+                            raise NIP5Error(f'nip5 fetch bad json - {response.content}')
+        except Exception as e:
+            logging.debug(f'NIP5Helper::check_nip5 error occurred checking nip5 - {e}')
 
-                    except JSONDecodeError as je:
-                        raise NIP5Error(f'nip5 fetch bad json - {response.content}')
 
         return ret
 
     @staticmethod
     async def check_nip5_profile(p: Profile):
-        nip5 = p.get_attr('nip05')
         ret = False
-        if nip5:
-            ret = await NIP5Helper.check_nip5(nip5=nip5,
-                                              pub_k=p.public_key)
+        if p:
+            nip5 = p.get_attr('nip05')
+
+            if nip5:
+                ret = await NIP5Helper.check_nip5(nip5=nip5,
+                                                  pub_k=p.public_key)
         return ret
 
     async def is_valid(self, nip5: str, pub_k: str):
         if pub_k in self._cache:
             the_check = self._cache[pub_k]
             if the_check['nip5'] == nip5:
-                print('cached value')
                 return the_check['value']
 
         # not cache or the nip5 text changed so recheck
@@ -802,10 +816,11 @@ class NIP5Helper:
 
     async def is_valid_profile(self, p: Profile):
         ret = False
-        nip5 = p.get_attr('nip05')
-        if nip5:
-            ret = self.is_valid(nip5=nip5,
-                                pub_k=p.public_key)
+        if p:
+            nip5 = p.get_attr('nip05')
+            if nip5:
+                ret = await self.is_valid(nip5=nip5,
+                                          pub_k=p.public_key)
         return ret
 
 
