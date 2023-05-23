@@ -96,25 +96,15 @@ also has HTTP get methods added:
 * /req
 * /view_profile
 
-**/monstr/examples/basic_usage.py**  
+**/monstr/examples/basic_usage.py** - examples query and post to test relay
 
-examples query and post to test relay
+**/monstr/examples/post_text.py** - type in and post text events to test relay
 
-**/monstr/examples/post_text.py**  
+**/monstr/examples/print_text_notes.py** - display text notes for given key, EOSE and EVENT
 
-type in and post text events to test relay
+**/monstr/exampels/query.py** - simple cmd line queries see query.py --help  
 
-**/monstr/examples/print_text_notes.py**  
-
-display text notes for given key, EOSE and EVENT
-
-**/monstr/exampels/query.py**  
-
-simple cmd line queries see query.py --help  
-
-**/monstr/examples/view_profile.py**  
-
-simple webserver running at 8080 with method /view_profile?pub_k={a_pub_k} that returns that profiles data by querying the local relay
+**/monstr/examples/view_profile.py** - simple webserver running at 8080 with method /view_profile?pub_k={a_pub_k} that returns that profiles data by querying the local relay
 
 # Contribute:
 
