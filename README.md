@@ -82,13 +82,9 @@ Note: developed against python 3.8
 
 ### further examples
 
-**/monstr/examples/keys.py**  
+**/monstr/examples/keys.py** - create new keys or look up other representation of existing keys  
 
-create new keys or look up other representation of existing keys  
-
-**/monstr/examples/create_test_env**  
-
-creates a test environment relay running on local host port 8888 storing data in sqlitedb
+**/monstr/examples/create_test_env** - creates a test environment relay running on local host port 8888 storing data in sqlitedb
 prepopulated with some data - currently hardcoded to come from relay wss://nostr-pub.wellorder.net
 and based on key 5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f. The relay 
 also has HTTP get methods added:  
