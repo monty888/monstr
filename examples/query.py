@@ -57,7 +57,7 @@ def parse_filter(parse_args):
 
 def get_args():
     parser = argparse.ArgumentParser(
-        prog='NostrQuery',
+        prog='query.py',
         description='simple program to send queries to nostr relays'
     )
     parser.add_argument('-r', '--relay', action='store', default=DEFAULT_RELAY,

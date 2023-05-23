@@ -80,7 +80,36 @@ Note: developed against python 3.8
     c.end()
 ```
 
-for more see /monstr/examples
+### further examples
+
+**/monstr/examples/keys.py**  
+
+create new keys or look up other representation of existing keys  
+
+**/monstr/examples/create_test_env**  
+
+creates a test environment relay running on local host port 8888 storing data in sqlitedb
+prepopulated with some data - currently hardcoded to come from relay wss://nostr-pub.wellorder.net
+and based on key 5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f. The relay 
+also has HTTP get methods added:  
+* /e
+* /req
+* /view_profile
+
+**/monstr/examples/basic_usage.py**  
+examples query and post to test relay
+
+**/monstr/examples/post_text.py**  
+type in and post text events to test relay
+
+**/monstr/examples/print_text_notes.py**
+display text notes for given key, EOSE and EVENT
+
+**/monstr/exampels/query.py**  
+simple cmd line queries see query.py --help  
+
+**/monstr/examples/view_profile.py**  
+simple webserver running at 8080 with method /view_profile?pub_k={a_pub_k} that returns that profiles data by querying the local relay
 
 # Contribute:
 

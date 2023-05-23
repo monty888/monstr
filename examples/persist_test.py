@@ -82,7 +82,7 @@ async def test_query():
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     util_funcs.create_sqlite_store(DB_FILE)
-    asyncio.run(test_publish())
+    asyncio.run(test_events())
     # asyncio.run(test_events())
     # asyncio.run(test_delete())
     # asyncio.run(test_query())
