@@ -144,5 +144,6 @@ class util_funcs:
             the_func(*args)
         return task
 
-if __name__ == "__main__":
-    print('monkies')
+
+class ConfigError(Exception):
+    pass

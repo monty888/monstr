@@ -314,7 +314,7 @@ class Event:
             # create lookup of out type tags
             t_lookup = set()
             for c_tag in self._tags:
-                if c_tag and c_tag[0] == t_type:
+                if c_tag and c_tag[0] == t_type and len(c_tag) > 1:
                     t_lookup.add(c_tag[1])
             # if there are any p tags on this event
             if t_lookup:

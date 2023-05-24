@@ -6,23 +6,91 @@ import signal
 import logging
 import asyncio
 import aioconsole
+import argparse
 from monstr.encrypt import Keys
-from monstr.client.client import Client
+from monstr.client.client import ClientPool
 from monstr.event.event import Event
+from monstr.util import ConfigError
+
+# default relay
+RELAY = 'ws://localhost:8888'
+# default from user
+FROM_USER = None
+# default to user
+TO_USER = None
 
 
-async def prompt_post(keys:Keys, relay='ws://localhost:8888'):
+def get_args():
+    ret = get_cmdline_args({
+        'relay': RELAY,
+        'as_user': FROM_USER,
+        'to_user': TO_USER
+    })
+
+    if ret.debug:
+        logging.getLogger().setLevel(logging.ERROR)
+
+    if ret.as_user is None:
+        ret.as_user = Keys()
+        print(f'created new key for posting - {ret.as_user.public_key_bech32()}')
+    else:
+        if not Keys.is_bech32_key(ret.as_user):
+            raise ConfigError(f'{ret.as_user} doesn\'t look like a valid nostr key, only npub/nsec accepted')
+        if ret.as_user.startswith('npub'):
+            raise ConfigError('a private key is required for posting')
+        ret.as_user = Keys(ret.as_user)
+        print(f'using existing key for posting - {ret.as_user.public_key_bech32()}')
+
+    if ret.to_user:
+        if not Keys.is_valid_key(ret.to_user):
+            raise ConfigError(f'{ret.to_user} doesn\'t look like a valid nostr key')
+        ret.to_user = Keys.get_key(ret.to_user)
+        print(f'posting to - {ret.to_user.public_key_bech32()}')
+    else:
+        print(f'posting to everyone')
+
+    return ret
+
+
+def get_cmdline_args(args) -> dict:
+    parser = argparse.ArgumentParser(
+        prog='post_text.py',
+        description="""
+            post text notes
+            """
+    )
+    parser.add_argument('-r', '--relay', action='store', default=args['relay'],
+                        help=f'comma separated nostr relays to connect to, default[{args["relay"]}]')
+    parser.add_argument('-a', '--as_user', action='store', default=args['as_user'],
+                        help=f"""
+                        priv_k of user to post as,
+                        default[{args['as_user']}]""")
+    parser.add_argument('-t', '--to_user', action='store', default=args['as_user'],
+                        help=f"""
+                        nostr key of user to post to,
+                        default[{args['to_user']}]""")
+    parser.add_argument('-d', '--debug', action='store_true', help='enable debug output')
+    ret = parser.parse_args()
+
+    return ret
+
+
+async def prompt_post(args):
     """
     loops around accepting text and then posting that to the relay until user types exit
     :param priv_k:
     :param relay:
     :return:
     """
-    print('making posts for pub_k - %s' % keys.public_key_hex())
+
+    relay = args.relay.split(',')
+    as_user: Keys = args.as_user
+    to_user: Keys = args.to_user
+
     print('type exit to quit')
     msg_n = ''
 
-    client = Client(relay_url=relay)
+    client = ClientPool(clients=relay)
     asyncio.create_task(client.run())
 
     # exit cleanly on ctrl c
@@ -37,32 +105,25 @@ async def prompt_post(keys:Keys, relay='ws://localhost:8888'):
         msg = await aioconsole.ainput('> ')
         msg_n = msg.lower().replace(' ', '')
         if msg_n != '' and msg_n != 'exit':
+            if to_user:
+                tags = [['p', to_user.public_key_hex()]]
+
             n_event = Event(kind=Event.KIND_TEXT_NOTE,
                             content=msg,
-                            pub_key=keys.public_key_hex())
-            n_event.sign(keys.private_key_hex())
+                            pub_key=as_user.public_key_hex(),
+                            tags=tags)
+            n_event.sign(as_user.private_key_hex())
             client.publish(n_event)
 
     print('stopping...')
     client.end()
 
 
-
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.ERROR)
-    args = sys.argv[1:]
 
-    if not args:
-        my_keys = Keys()
-        print('created new key for posting')
-    else:
-        for_key = args[0]
-        if not Keys.is_bech32_key(for_key):
-            print('%s doesn\'t look like a valid monstr key, only npub/nsec accepted' % for_key)
-            sys.exit(2)
-        if for_key.startswith('npub'):
-            print('a private key is required for posting')
-            sys.exit(2)
-        my_keys = Keys.get_key(for_key)
+    try:
+        print(asyncio.run(prompt_post(get_args())))
+    except ConfigError as ce:
+        print(ce)
 
-    asyncio.run(prompt_post(my_keys))

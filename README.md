@@ -100,6 +100,8 @@ also has HTTP get methods added:
 
 **/monstr/exampels/query.py** - simple cmd line queries see query.py --help  
 
+**/monstr/examples/simple_bot.py** - a simple bot that return the count for each time it gets a message for a pub_k 
+
 **/monstr/examples/view_profile.py** - simple webserver running at 8080 with method /view_profile?pub_k={a_pub_k} that returns that profiles data by querying the local relay
 
 # Contribute:
