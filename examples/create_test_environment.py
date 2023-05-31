@@ -19,6 +19,7 @@ from pathlib import Path
 WORK_DIR = '%s/.nostrpy/' % Path.home()
 DB = WORK_DIR+'test_env.db'
 
+
 async def run_relay():
 
     r = Relay(store=ARelaySQLiteEventStore(DB),
@@ -31,7 +32,8 @@ async def run_relay():
         web.get('/view_profile', view_profile_route(r))
     ]
 
-    await r.start_background(port=8888, routes=extra_routes)
+    # await r.start_background(port=8888, routes=extra_routes)
+    await r.start(port=8888, routes=extra_routes, block=False)
 
     return r
 

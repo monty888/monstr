@@ -184,17 +184,23 @@ class Relay:
             my_routes = my_routes + routes
         self._server.add_routes(my_routes)
 
-
-    async def start(self, host='localhost', port=8080, end_point='/', routes=None, block=True):
+    async def start(self, host='localhost', port=8080, end_point='/', routes=None, block=True, **kargs):
         logging.info('Relay::start %s:%s%s block=%s' % (host, port, end_point, block))
 
         self._starter(host, port, end_point, routes)
 
         self._runner = web.AppRunner(self._server)
         await self._runner.setup()
+
+        # run over ssl
+        ssl_context = None
+        if 'ssl_context' in kargs:
+            ssl_context = kargs['ssl_context']
+
         site = web.TCPSite(self._runner,
                            host=self._host,
-                           port=self._port)
+                           port=self._port,
+                           ssl_context=ssl_context)
         await site.start()
 
         # probably there is a better way to do this but was having problems mixing web.run_app with
