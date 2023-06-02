@@ -63,7 +63,8 @@ class Client:
                  emulate_eose: bool = True,
                  timeout: int = 5,
                  ping_timeout: int = 30,
-                 query_timeout: int = 10):
+                 query_timeout: int = 10,
+                 ssl=None):
 
         # url of relay to connect
         self._url = relay_url
@@ -119,6 +120,11 @@ class Client:
         # used for open_timeout/close_timeout of websockets.connect
         self._timeout = timeout
 
+        # as aiohttp see https://docs.aiohttp.org/en/stable/client_reference.html
+        # set False to disable SSL verification checks
+        # default is None where ssl.create_default_context() by aiohttp
+        self._ssl = ssl
+
         # ping_interval and ping_timeout of websockets.connect set to this
         self._ping_timeout = ping_timeout
         # timeout default for query method
@@ -133,7 +139,8 @@ class Client:
                 async with aiohttp.ClientSession() as my_session:
                     async with my_session.ws_connect(self._url,
                                                      timeout=self._timeout,
-                                                     heartbeat=self._ping_timeout) as ws:
+                                                     heartbeat=self._ping_timeout,
+                                                     ssl=self._ssl) as ws:
 
                         self._is_connected = True
                         self._connected_count += 1
@@ -516,12 +523,16 @@ class Client:
             'Accept': 'application/nostr+json'
         }) as session:
             info_url = self._url.replace('ws:', 'http:').replace('wss:', 'https:')
-            async with session.get(info_url) as response:
-                if response.status == 200:
-                    try:
-                        self._relay_info = json.loads(await response.text())
-                    except JSONDecodeError as je:
-                        logging.debug('Client::get_relay_information bad response: %s' % response.content)
+            try:
+                async with session.get(info_url, ssl=self._ssl) as response:
+                    if response.status == 200:
+                        try:
+                            self._relay_info = json.loads(await response.text())
+                        except JSONDecodeError as je:
+                            logging.debug(f'Client::get_relay_information bad response:{response.content}')
+            except Exception as e:
+                # note we just continue without relay specific info... maybe do some better fullback
+                logging.debug(f'Client::get_relay_information connection problem: {e}')
 
     @property
     def relay_information(self):
@@ -633,6 +644,12 @@ class ClientPool:
         if isinstance(clients, str):
             clients = [clients]
 
+        # ssl if disabled - will be disabled for all clients
+        # if created from url str
+        self._ssl = None
+        if 'ssl' in kargs:
+            self._ssl = kargs['ssl']
+
         for c_client in clients:
             try:
                 self.add(c_client)
@@ -643,6 +660,8 @@ class ClientPool:
         # no client has connected after timeout then we'll error
         # if None we'll just wait forever until a client connects
         self._timeout = timeout
+
+
 
     def add(self, client, auto_start=False) -> Client:
         """
@@ -662,12 +681,14 @@ class ClientPool:
             the_client = Client(client,
                                 on_connect=self._on_connect,
                                 on_eose=self._on_eose,
-                                on_notice=self._on_notice)
+                                on_notice=self._on_notice,
+                                ssl=self._ssl)
         elif isinstance(client, Client):
             the_client = client
             the_client.set_on_connect(self._on_connect)
             the_client.set_on_eose(self._on_eose)
         elif isinstance(client, dict):
+            # read/write mode for client
             read = True
             if 'read' in client:
                 read = client['read']
@@ -675,12 +696,19 @@ class ClientPool:
             if 'write' in client:
                 write = client['write']
 
+            # unless defined ssl will be as pool as a whole - usually should be None for verifying
+            ssl = self._ssl
+            if 'ssl' in client:
+                ssl = client['ssl']
+
             client_url = client['client']
+
             the_client = Client(client_url,
                                 on_connect=self._on_connect,
                                 on_eose=self._on_eose,
                                 read=read,
-                                write=write)
+                                write=write,
+                                ssl=ssl)
 
         if the_client.url in self._clients:
             raise Exception('ClientPool::add - %s attempted to add Client that already exists' % the_client.url)

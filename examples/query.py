@@ -70,10 +70,11 @@ def get_args():
                         help='comma separated kinds to query - default any')
     parser.add_argument('-a', '--authors', action='store', default=None,
                         help='comma separated list or author keys, can be nsec, npub, public hex or alias')
-    parser.add_argument('-d', '--debug', action='store_true', help='enable debug output')
     parser.add_argument('-o', '--output', choices=['heads', 'full', 'raw'], default='full',
                         help='format to output events. heads - event_id@time, '
                              'full - includes event content, raw - the raw json str')
+    parser.add_argument('--ssl_disable_verify', action='store_true', help='disables checks of ssl certificates')
+    parser.add_argument('-d', '--debug', action='store_true', help='enable debug output')
 
     ret = parser.parse_args()
     if ret.debug:
@@ -93,19 +94,27 @@ def get_args():
 
 
 async def do_query(args):
-    async with ClientPool(args.relay.split(','),
-                          query_timeout=args.timeout) as c:
-        my_query = {
-            'limit': args.limit
-        }
-        key_map = None
+    # is ssl cert checks disabled?
+    ssl = None
+    if args.ssl_disable_verify:
+        ssl = False
 
-        if args.kinds:
-            my_query['kinds'] = args.kinds
-        if args.authors:
-            c_k: Keys
-            my_query['authors'] = [c_k.public_key_hex() for c_k in args.authors]
-            key_map = {c_k.public_key_hex(): c_k for c_k in args.authors}
+    # make the query
+    my_query = {
+        'limit': args.limit
+    }
+    key_map = None
+
+    if args.kinds:
+        my_query['kinds'] = args.kinds
+    if args.authors:
+        c_k: Keys
+        my_query['authors'] = [c_k.public_key_hex() for c_k in args.authors]
+        key_map = {c_k.public_key_hex(): c_k for c_k in args.authors}
+
+    async with ClientPool(args.relay.split(','),
+                          query_timeout=args.timeout,
+                          ssl=ssl) as c:
 
         events = await c.query(my_query,
                                emulate_single=False)
