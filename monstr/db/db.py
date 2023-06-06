@@ -320,7 +320,6 @@ class ASQLiteDatabase(ADatabase, ABC):
                 await curs.execute('begin')
                 try:
                     for c_cmd in batch:
-                        print(c_cmd)
                         args = []
                         sql = c_cmd['sql']
                         if 'args' in c_cmd:
@@ -332,10 +331,15 @@ class ASQLiteDatabase(ADatabase, ABC):
                             await curs.executemany(sql, args)
                         else:
                             await curs.execute(sql, args)
+                    await c.commit()
+                    await curs.close()
                 except Exception as e:
                     print(e)
-                await c.commit()
-                await curs.close()
+                    try:
+                        await c.rollback()
+                    except Exception as ee:
+                        pass
+
             logging.debug('Database::execute_batch commit done')
 
     async def select_sql(self, sql, args=None) -> DataSet:
