@@ -17,7 +17,6 @@ if TYPE_CHECKING:
 import json
 import re
 import aiohttp
-from aiohttp import ClientConnectorError
 from copy import copy
 from json import JSONDecodeError
 import logging
@@ -184,12 +183,23 @@ class Profile:
     def name(self):
         ret = None
         if 'name' in self.attrs:
-            ret = self.attrs['name']
+            ret = str(self.attrs['name'])
         return ret
 
     @name.setter
     def name(self, name):
         self._attrs['name'] = name
+
+    @property
+    def nip05(self):
+        ret = None
+        if 'nip05' in self.attrs:
+            ret = str(self.attrs['nip05'])
+        return ret
+
+    @nip05.setter
+    def nip05(self, name):
+        self._attrs['nip05'] = name
 
     # only exists if us
     @property
@@ -789,7 +799,7 @@ class NIP5Helper:
     async def check_nip5_profile(p: Profile):
         ret = False
         if p:
-            nip5 = p.get_attr('nip05')
+            nip5 = p.nip05
 
             if nip5:
                 ret = await NIP5Helper.check_nip5(nip5=nip5,
@@ -817,7 +827,7 @@ class NIP5Helper:
     async def is_valid_profile(self, p: Profile):
         ret = False
         if p:
-            nip5 = p.get_attr('nip05')
+            nip5 = p.nip05
             if nip5:
                 ret = await self.is_valid(nip5=nip5,
                                           pub_k=p.public_key)
