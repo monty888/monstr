@@ -55,6 +55,34 @@ class DeduplicateAcceptor(EventAccepter):
         return ret
 
 
+class FilterAcceptor(EventAccepter):
+    """
+        Use this to make sure that relay is returning you the events that you requested.
+        if the_filter is None then it'll always return True until the_filter is set
+    """
+
+    def __init__(self, the_filter=None):
+        self._filter = the_filter
+
+    @property
+    def filter(self):
+        return self._filter
+
+    @filter.setter
+    def filter(self, the_filter):
+        self._filter = the_filter
+
+    def accept_event(self,
+                     the_client: Client,
+                     sub_id: str,
+                     evt: Event) -> bool:
+        ret = True
+        if self._filter:
+            ret = evt.test(self._filter)
+
+        return ret
+
+
 class DuplicateContentAcceptor(EventAccepter):
     def __init__(self, max_dedup=10000):
         # de-duplicating of events for when we're connected to multiple relays
