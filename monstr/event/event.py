@@ -52,6 +52,11 @@ class EventTags:
         return [t[0] for t in self.get_tags(tag_name)]
 
     @property
+    def tag_names(self) -> set:
+        # return all unique tag names
+        return {c_tag[0] for c_tag in self._tags if len(c_tag)>0}
+
+    @property
     def e_tags(self):
         """
         :return: all ref'd events/#e tag in [evt_id, evt_id,...] makes sure evt_id is correct len
@@ -397,7 +402,7 @@ class Event:
         return self._tags
 
     @tags.setter
-    def tags(self, tags):
+    def tags(self, tags) -> EventTags:
         self._tags = EventTags(tags)
 
     def get_tags(self, tag_name):
