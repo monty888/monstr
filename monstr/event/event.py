@@ -1,13 +1,12 @@
 from datetime import datetime
 import base64
-from enum import Enum
 import json
 import logging
 from json import JSONDecodeError
 import secp256k1
 import hashlib
 from monstr.util import util_funcs
-from monstr.encrypt import SharedEncrypt
+from monstr.encrypt import SharedEncrypt, Keys
 
 
 class EventTags:
@@ -222,6 +221,24 @@ class Event:
             elif c_evt.kind == kind:
                 logging.debug('latest_events_only: ignore superceeded event %s' % c_evt)
 
+        return ret
+
+    @staticmethod
+    def decrypt_nip4(evt: 'Event', keys: Keys, check_kind=True) -> 'Event':
+        """
+        returns a copy of evt but with the content decrtpted as NIP4
+        """
+
+        # make a copy
+        ret = Event.from_JSON(evt.event_data())
+        # now decrypt the content
+        pub_k = evt.pub_key
+        if pub_k == keys.public_key_hex():
+            pub_k = evt.p_tags[0]
+
+        ret.content = evt.decrypted_content(priv_key=keys.private_key_hex(),
+                                            pub_key=pub_k,
+                                            check_kind=check_kind)
         return ret
 
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
