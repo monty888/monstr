@@ -308,9 +308,9 @@ class Relay:
             if self._ack_events:
                 err = nc.get_data()
 
-
-        await self._do_send(ws=ws,
-                            data=err)
+        if err:
+            await self._do_send(ws=ws,
+                                data=err)
 
     async def _persist_events(self):
         async for job in self._write_queue:
