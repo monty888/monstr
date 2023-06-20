@@ -272,7 +272,7 @@ class Event:
             self._kind,
             self._tags.tags,
             self._content
-        ], separators=(',', ':'))
+        ], separators=(',', ':'), ensure_ascii=False)
 
         return ret
 
