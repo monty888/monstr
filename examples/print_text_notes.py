@@ -50,6 +50,7 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
 
     # this will do the store events on first connect or reconnect after some time
     def on_eose(the_client: Client, sub_id:str, events: [Event]):
+        print('GOT EOSE!!!!', len(events))
         # so newest events come in at the bottom
         Event.sort(events, inplace=True, reverse=False)
         for evt in events:

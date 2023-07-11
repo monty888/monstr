@@ -105,6 +105,7 @@ async def prompt_post(args):
         msg = await aioconsole.ainput('> ')
         msg_n = msg.lower().replace(' ', '')
         if msg_n != '' and msg_n != 'exit':
+            tags = []
             if to_user:
                 tags = [['p', to_user.public_key_hex()]]
 

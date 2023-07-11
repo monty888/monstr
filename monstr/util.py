@@ -84,11 +84,11 @@ class util_funcs:
 
     @staticmethod
     def create_sqlite_store(db_file):
-        from monstr.event.persist import ClientSQLiteEventStore
+        from monstr.event.persist_sqlite import RelaySQLiteEventStore
         from monstr.ident.persist import SQLiteProfileStore
         from monstr.channels.persist import SQLiteSQLChannelStore
         from monstr.settings.persist import SQLiteSettingsStore
-        my_events = ClientSQLiteEventStore(db_file)
+        my_events = RelaySQLiteEventStore(db_file)
         if not my_events.exists():
             my_events.create()
             my_profiles = SQLiteProfileStore(db_file)

@@ -43,8 +43,9 @@ class Relay:
         NIP-12          generic query tags
                         https://github.com/fiatjaf/nostr/blob/master/nips/12.md
 
-        NIP-15      -   send 'EOSE' msg after sending the final event for a subscription
-                        https://github.com/nostr-protocol/nips/blob/master/15.md
+        # no longer optional
+        # NIP-15      -   send 'EOSE' msg after sending the final event for a subscription
+        #                 https://github.com/nostr-protocol/nips/blob/master/15.md
 
         NIP-16      -   ephemeral and replaceable events, depends on the store
                         https://github.com/nostr-protocol/nips/blob/master/16.md
@@ -71,7 +72,6 @@ class Relay:
                  description: str = None,
                  pubkey: str = None,
                  contact: str = None,
-                 enable_nip15=False,
                  ack_events=True):
 
 
@@ -116,16 +116,15 @@ class Relay:
             raise Exception('given contact pubkey is not correct: %s' % pubkey)
 
         # deletes
-        self._nip09 = self._store and self._store.is_NIP09()
-        # EOSE
-        self._nip15 = enable_nip15
-        # replacable and transient event ranges
-        self._nip16 = self._store and self._store.is_NIP16()
+        self._nip09 = self._store and self._store.NIP09
 
+        # replacable and transient event ranges
+        self._nip16 = self._store and self._store.NIP16
 
         nips = [1, 2, 11]
-        if self._nip15:
-            nips.append(15)
+        # EOSE was removed as optional NIP so we'll no longer have this as option
+        # if self._nip15:
+        #     nips.append(15)
         if self._nip09:
             nips.append(9)
         if self._nip16:
@@ -135,12 +134,8 @@ class Relay:
 
         nips.sort()
 
-        logging.info('Relay::__init__ maxsub=%s '
-                     'EOSE enabled(NIP15)=%s, Deletes(NIP9)=%s, Event treatment(NIP16)=%s, Commands(NIP20)=%s' % (self._max_sub,
-                                                                                                                  self._nip15,
-                                                                                                                  self._nip09,
-                                                                                                                  self._nip16,
-                                                                                                                  self._ack_events))
+        logging.info(f"""Relay::__init__ maxsub={self._max_sub}
+            Deletes(NIP9)={self._nip09}, Event treatment(NIP16)={self._nip16}, Commands(NIP20)={self._ack_events}""")
 
 
         self._relay_information = {
@@ -413,9 +408,8 @@ class Relay:
         for c_evt in evts:
             await self._send_event(ws, sub_id, c_evt)
 
-        # send EOSE event if enabled - unlikely it wouldn't be
-        if self._nip15:
-            await self._send_eose(ws, sub_id)
+        # send EOSE
+        await self._send_eose(ws, sub_id)
 
     async def _do_unsub(self, req_json, ws):
         logging.info('un-subscription requested')

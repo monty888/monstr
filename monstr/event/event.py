@@ -34,21 +34,37 @@ class EventTags:
             tags = []
         self._tags = tags
 
-    def get_tags(self, tag_name):
+    def get_tags(self, tag_name: str):
         """
-        returns tag data for tag_name, no checks on the data e..g. that #e, event id is long enough to be valid event
+        returns tag data for tag_name, no checks on the data e.g. that #e, event id is long enough to be valid event
         :param tag_name:
         :return:
         """
         return [t[1:] for t in self._tags if len(t) >= 1 and t[0] == tag_name]
 
-    def get_tags_value(self, tag_name):
+    def get_tags_value(self, tag_name: str) -> []:
         """
-        returns the first val of data for given tags in most cases this would be what we want otherwise use get_tags
+        returns [] containing the 1st value field for a given tag, in many cases this is all we want
+        if not use get_tags
         :param tag_name:
         :return:
         """
         return [t[0] for t in self.get_tags(tag_name)]
+
+    def get_tag_value_pos(self, tag_name: str, pos: int = 0, default: str = None) -> str:
+        """
+            returns tag value (first el after tag name) for given tag_name at pos,
+            if there isn't a tag at that pos then default is returned
+
+            e.g. we only want very first d tags value else ''
+                get_tag_value_pos('d', default='')
+
+        """
+        ret = default
+        vals = self.get_tags_value(tag_name)
+        if vals:
+            ret = vals[pos]
+        return ret
 
     @property
     def tag_names(self) -> set:
@@ -414,6 +430,10 @@ class Event:
         # true if emphereal as defined by NIP16
         return 20000 <= self.kind < 30000
 
+    def is_parameter_replacable(self) -> bool:
+        # true if replacable as defined by NIP33 https://github.com/nostr-protocol/nips/blob/master/33.md
+        return 30000 <= self.kind < 40000
+
     @property
     def tags(self):
         return self._tags
@@ -427,6 +447,11 @@ class Event:
 
     def get_tags_value(self, tag_name):
         return self._tags.get_tags_value(tag_name)
+
+    def get_tag_value_pos(self, tag_name: str, pos: int = 0, default: str = None) -> str:
+        return self._tags.get_tag_value_pos(tag_name=tag_name,
+                                            pos=pos,
+                                            default=default)
 
     @property
     def e_tags(self):

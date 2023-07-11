@@ -8,7 +8,7 @@ import signal
 import asyncio
 from datetime import datetime
 from monstr.relay.relay import Relay, event_route, filter_route, view_profile_route
-from monstr.event.persist import RelayMemoryEventStore, RelaySQLiteEventStore, ARelaySQLiteEventStore
+from monstr.event.persist_sqlite import ARelaySQLiteEventStore
 from monstr.client.client import Client
 from monstr.event.event import Event
 from monstr.ident.profile import ContactList
@@ -23,7 +23,6 @@ DB = WORK_DIR+'test_env.db'
 async def run_relay():
 
     r = Relay(store=ARelaySQLiteEventStore(DB),
-              enable_nip15=True,
               max_sub=10)
     # add some extra http methods to the relay so we can browse the data a little
     extra_routes = [
@@ -153,7 +152,8 @@ async def run(**kargs):
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    import_relay = 'wss://nostr-pub.wellorder.net'
+    # import_relay = 'wss://nostr-pub.wellorder.net'
+    import_relay = 'wss://nos.lol'
     util_funcs.create_sqlite_store(DB)
 
     asyncio.run(run(import_relay=import_relay,

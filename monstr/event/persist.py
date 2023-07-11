@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
 import logging
-import os
-from pathlib import Path
 from enum import Enum
 from monstr.event.event import Event
 from monstr.db.db import ADatabase, Database, ASQLiteDatabase, SQLiteDatabase, PostgresDatabase
@@ -219,9 +217,8 @@ class GenericSQL:
             batch = []
 
         if store.delete_mode == DeleteMode.no_action or evt.kind != evt.KIND_DELETE:
-            print('fucksake', evt.kind)
             return batch
-        print(evt.tags)
+
         to_delete = evt.e_tags
 
         # only flag as deleted
@@ -248,44 +245,87 @@ class GenericSQL:
 
         def _do_update(evt: Event):
             """
-            should we go ahead with this update or not, the check is dependent on if its a simple insert
-            or to be inserted as replaceable_event like meta/contacts(or NIP16)
-            ideally this check would be included in the batch... work out away to do that in future...
-
-            :param evt:
-            :return:
+            go ahead and put this event into the db?
+            only ephemeral backs out as we let the db deal with the rest i.e. ignore if it already exists
             """
+            ret = True
             if the_store.is_ephemeral(evt):
                 return False
-            elif the_store.is_replaceable(evt):
-                ret = True
-            else:
-                ret = True
             return ret
 
-        def _prepare_most_recent_types(evt: Event):
-            # will remove all but the most recent event of kind/key
-            batch.append({
-                'sql': """
-                        delete from events where id in(
-                            select id from events where kind=%s and pubkey=%s and id not in(
-                                select id from events where kind=%s and pubkey=%s order by created_at desc limit 1
-                            )
-                        );
-                        """.replace('%s', db_placeholder),
-                'args': [
-                    evt.kind, evt.pub_key,
-                    evt.kind, evt.pub_key
-                ]
-            })
+        def _prepare_replacements(evt: Event):
+            """
+                adds a delete of any but the most recent for NIP16, NIP33 if required
+                note this is done after we added, in case what we added is not the topmost event it gets deleted
+                straigh away!
+            """
+
+            # nip16, basic event treament
+            if the_store.is_replaceable(evt):
+                batch.append({
+                    'sql': f"""
+                            delete from events where id in(
+                                select id from events where kind={db_placeholder} and pubkey={db_placeholder} and id not in(
+                                    select id from events where kind={db_placeholder} and pubkey={db_placeholder} 
+                                    order by created_at desc limit 1
+                                )
+                            );
+                            """,
+                    'args': [
+                        evt.kind, evt.pub_key,
+                        evt.kind, evt.pub_key
+                    ]
+                })
+            elif the_store.is_parameter_replaceable(evt):
+                d_tag = evt.get_tag_value_pos('d', default='')
+                batch.append({
+                    'sql': f"""
+                            delete from events where id in(
+                                select id from events 
+                                    where kind={db_placeholder} and 
+                                            pubkey={db_placeholder} and 
+                                            d_tag={db_placeholder} 
+                                        and id not in(
+                                            select id from events 
+                                                where kind={db_placeholder} and 
+                                                pubkey={db_placeholder} and 
+                                                d_tag = {db_placeholder}
+                                            order by created_at desc limit 1
+                                        )
+                            );
+                            """,
+                    'args': [
+                        evt.kind, evt.pub_key, d_tag,
+                        evt.kind, evt.pub_key, d_tag
+                    ]
+                })
+
+
 
         def _prepare_add_event_batch(evt: Event):
+            add_sql = f"""
+                insert into events(event_id, pubkey, created_at, kind, tags, content,sig, d_tag)
+                values(
+                    {db_placeholder},
+                    {db_placeholder},
+                    {db_placeholder},
+                    {db_placeholder},
+                    {db_placeholder},
+                    {db_placeholder},
+                    {db_placeholder},
+                    {db_placeholder}
+                )
+            """
+
+            # for NIP33 para replacements, we add d_tag at top level even if not in nip33 mode
+            d_tag = evt.get_tag_value_pos('d', default='')
+
             batch.append({
-                'sql': 'insert into events(event_id, pubkey, created_at, kind, tags, content,sig) '
-                       'values(%s,%s,%s,%s,%s,%s,%s)'.replace('%s', db_placeholder),
+                'sql': add_sql,
                 'args': [
                     evt.id, evt.pub_key, evt.created_at_ticks,
-                    evt.kind, str(evt.tags), evt.content, evt.sig
+                    evt.kind, str(evt.tags), evt.content, evt.sig,
+                    d_tag
                 ]
             })
 
@@ -312,8 +352,8 @@ class GenericSQL:
                         'args': [evt.id, tag_type, tag_value]
                     })
 
-            if the_store.is_replaceable(evt):
-                _prepare_most_recent_types(evt)
+            # add any required sql for replacable events
+            _prepare_replacements(evt)
 
             if evt.kind == Event.KIND_DELETE:
                 GenericSQL.get_delete_batch(store=the_store,
@@ -330,49 +370,6 @@ class GenericSQL:
                 if _do_update(c_evt):
                     _prepare_add_event_batch(c_evt)
             yield batch
-
-
-class SQLiteSQL:
-
-    @staticmethod
-    def get_create_relay_db():
-        return [
-            {
-                'sql':
-                    """
-                    create table events( 
-                        id INTEGER PRIMARY KEY,  
-                        event_id UNIQUE ON CONFLICT IGNORE,  
-                        pubkey text,  
-                        created_at int,  
-                        kind int,  
-                        tags text,  
-                        content text,  
-                        sig text,  
-                        deleted int)
-                    """
-            },
-            {
-                'sql':
-                    """
-                    create table event_tags(
-                        id int,  
-                        type text,  
-                        value text collate nocase,
-                        UNIQUE(id, type, value) ON CONFLICT IGNORE    
-                    )
-                    """
-            },
-            # triggers to keep things in sync
-            {
-                'sql': """
-            CREATE TRIGGER event_tags_ad AFTER DELETE ON events BEGIN
-              DELETE from event_tags where id=old.id;
-            END;
-            """
-            }
-
-        ]
 
 
 class PostgresSQL:
@@ -408,7 +405,52 @@ class PostgresSQL:
             # TODO: needs delete trigger adding for event_relay
         ]
 
-class EventStoreInterface(ABC):
+
+class NIPSupport:
+    """
+        is_NIPnn methods, all returning False,
+        if store has support for nip it should override that isNIPnn method
+    """
+
+    def __init__(self,
+                 delete_mode=DeleteMode.no_action,
+                 nip16: bool = False,
+                 nip33: bool = False):
+
+        self._delete_mode = delete_mode
+        self._nip16 = nip16
+        self._nip33 = nip33
+
+    @property
+    def delete_mode(self):
+        return DeleteMode.no_action
+
+    @property
+    def NIP09(self) -> bool:
+        # event deletes https://github.com/nostr-protocol/nips/blob/master/09.md
+        return self._delete_mode != DeleteMode.no_action
+
+    @property
+    def NIP16(self) -> bool:
+        # event treatment https://github.com/nostr-protocol/nips/blob/master/16.md
+        return self._nip16
+
+    @property
+    def NIP33(self) -> bool:
+        # parameter replacable events https://github.com/nostr-protocol/nips/blob/master/33.md
+        return self._nip33
+
+    def is_replaceable(self, evt: Event) -> bool:
+        return evt.is_replacable() and self.NIP16
+
+    def is_ephemeral(self, evt: Event) -> bool:
+        return evt.is_ephemeral() and self.NIP16
+
+    def is_parameter_replaceable(self, evt: Event) -> bool:
+        return evt.is_parameter_replacable() and self.NIP33
+
+
+class EventStoreInterface(ABC, NIPSupport):
 
     @abstractmethod
     def add_event(self, evt: Event):
@@ -434,38 +476,21 @@ class EventStoreInterface(ABC):
         :return: all evts in store that passed the filter
         """
 
-    @abstractmethod
-    def is_NIP16(self) ->bool:
-        """
-        store with current params implementing NIP16
-        :return: True/False
-        """
-
-    @property
-    @abstractmethod
-    def delete_mode(self):
-        """
-        :return:
-        """
-
-    def is_replaceable(self, evt: Event) -> bool:
-        return evt.is_replacable() and self.is_NIP16()
-
-    def is_ephemeral(self, evt: Event) -> bool:
-        return evt.is_ephemeral() and self.is_NIP16()
+    # def is_replaceable(self, evt: Event) -> bool:
+    #     return evt.is_replacable() and self.is_NIP16()
+    #
+    # def is_parameter_replaceable(self, evt: Event) -> bool:
+    #     return evt.is_parameter_replacable() and self.is_NIP33()
+    #
+    # def is_ephemeral(self, evt: Event) -> bool:
+    #     return evt.is_ephemeral() and self.is_NIP16()
 
 
 class RelayEventStoreInterface(EventStoreInterface):
     """
-        extra methods added specifically for a relay
+        extra methods added specifically for a relay -
+        is_NIP09 moved to EventStoreInterface so nothing anymore...
     """
-
-    @abstractmethod
-    def is_NIP09(self) -> bool:
-        """
-        store with current params implementing NIP09
-        :return: True/False
-        """
 
 
 class ClientEventStoreInterface(EventStoreInterface):
@@ -528,7 +553,7 @@ class ClientEventStoreInterface(EventStoreInterface):
         """
 
 
-class AEventStoreInterface(ABC):
+class AEventStoreInterface(ABC, NIPSupport):
     """
         async version of EventStoreInterface - Note as we've used the same method names rather
         than say add_event -> aadd_event the same class can't implement both interfaces
@@ -565,38 +590,11 @@ class AEventStoreInterface(ABC):
         :return: all evts in store that passed the filter
         """
 
-    @abstractmethod
-    def is_NIP16(self) ->bool:
-        """
-        store with current params implementing NIP16
-        :return: True/False
-        """
-
-    @property
-    @abstractmethod
-    def delete_mode(self):
-        """
-        :return:
-        """
-
-    def is_replaceable(self, evt: Event) -> bool:
-        return evt.is_replacable() and self.is_NIP16()
-
-    def is_ephemeral(self, evt: Event) -> bool:
-        return evt.is_ephemeral() and self.is_NIP16()
-
 
 class ARelayEventStoreInterface(AEventStoreInterface):
     """
-        extra methods added specifically for a relay
+        no addtional methods for the same reason as RelayEventStoreInterface doesn't have any
     """
-
-    @abstractmethod
-    def is_NIP09(self) -> bool:
-        """
-        store with current params implementing NIP09
-        :return: True/False
-        """
 
 
 class AClientEventStoreInterface(AEventStoreInterface):
@@ -659,95 +657,7 @@ class AClientEventStoreInterface(AEventStoreInterface):
         """
 
 
-class MemoryEventStore(EventStoreInterface):
-    """
-        Basic event store implemented in mem using {}
-        could be improved to purge old evts or at set size/number if evts
-        and to pickle events on stop and load for some sort of persistence when re-run
-
-    """
-
-    def __init__(self,
-                 delete_mode=DeleteMode.flag,
-                 is_nip16=True,
-                 sort_direction=SortDirection.newest_first):
-
-        self._delete_mode = delete_mode
-        self._is_nip16 = is_nip16
-        self._sort_direction = sort_direction
-        self._events = {}
-
-    def add_event(self, evt: Event):
-        if not self.is_ephemeral(evt):
-            self._events[evt.id] = {
-                'is_deleted': False,
-                'evt': evt
-            }
-
-    def do_delete(self, evt: Event):
-        if self._delete_mode == DeleteMode.no_action:
-            return
-        else:
-            for c_id in evt.e_tags:
-                if c_id in self._events:
-                    if self._delete_mode == DeleteMode.flag:
-                        self._events[c_id]['is_deleted'] = True
-                    elif self._delete_mode == DeleteMode.delete:
-                        # we just leave the is deleted flag in place but get rid of the evt data
-                        # as it's just in memory it wouldn't be easy to get at anyway so really we're just freeing the mem
-                        del self._events[c_id]['evt']
-
-    def get_filter(self, filters):
-        ret = set([])
-        c_evt: Event
-        limit = None
-        # only been passed a single, put into list
-        if isinstance(filters, dict):
-            filters = [filters]
-
-        # get limit if any TODO: add offset support
-        for c_filter in filters:
-            if 'limit' in c_filter:
-                if limit is None or c_filter['limit'] > limit:
-                    limit = c_filter['limit']
-
-        # bit shit as we store unsorted we have to get all then sort and can only cut
-        # to limit then
-        for evt_id in self._events:
-            r = self._events[evt_id]
-            if not r['is_deleted']:
-                c_evt = r['evt']
-                for c_filter in filters:
-                    if c_evt.test(c_filter):
-                        ret.add(c_evt)
-
-        def _updated_sort(evt_data):
-            return evt_data['created_at']
-
-        ret = [c_evt.event_data() for c_evt in ret]
-        if self._sort_direction != SortDirection.natural:
-            ret.sort(key=_updated_sort, reverse=self._sort_direction==SortDirection.newest_first)
-
-        if limit is not None:
-            ret = ret[:limit]
-
-        return ret
-
-    @property
-    def delete_mode(self):
-        return self._delete_mode
-
-    def is_NIP16(self) -> bool:
-        return self._is_nip16
-
-
-class RelayMemoryEventStore(MemoryEventStore, RelayEventStoreInterface):
-
-    def is_NIP09(self):
-        return self._delete_mode in (DeleteMode.flag, DeleteMode.delete)
-
-
-class SQLEventStore(EventStoreInterface):
+class SQLEventStore(EventStoreInterface, NIPSupport):
     """
         sync sql event store
     """
@@ -755,10 +665,15 @@ class SQLEventStore(EventStoreInterface):
                  db: Database,
                  delete_mode=DeleteMode.flag,
                  is_nip16=True,
+                 is_nip33=True,
                  sort_direction=SortDirection.newest_first,
                  batch_size=500):
-        self._delete_mode = delete_mode
-        self._is_nip16 = is_nip16
+
+        NIPSupport.__init__(self,
+                            delete_mode=delete_mode,
+                            nip16=is_nip16,
+                            nip33=is_nip33)
+
         self._sort_direction = sort_direction
         self._db = db
         self._batch_size = batch_size
@@ -793,11 +708,11 @@ class SQLEventStore(EventStoreInterface):
 
         return data.as_arr(True)
 
-    @property
-    def delete_mode(self):
-        return self._delete_mode
+    # @property
+    # def delete_mode(self):
+    #     return self._delete_mode
 
-    async def do_delete(self, evt: Event):
+    def do_delete(self, evt: Event):
         """
         Not sure if this method is useful...probably add_event of a delete event is better?
         though maybe there are somecases where you'd want to delete like this without persiting the delete event itself?
@@ -810,12 +725,15 @@ class SQLEventStore(EventStoreInterface):
         batch = GenericSQL.get_delete_batch(store=self,
                                             evt=evt)
         self._db.execute_batch(batch)
+    #
+    # def is_NIP16(self) -> bool:
+    #     return self._is_nip16
+    #
+    # def is_NIP33(self) -> bool:
+    #     return self.is_NIP33()
 
-    def is_NIP16(self) -> bool:
-        return self._is_nip16
 
-
-class ASQLEventStore(AEventStoreInterface):
+class ASQLEventStore(AEventStoreInterface, NIPSupport):
     """
         async base sql store
     """
@@ -823,13 +741,17 @@ class ASQLEventStore(AEventStoreInterface):
                  db: ADatabase,
                  delete_mode=DeleteMode.flag,
                  is_nip16=True,
+                 is_nip33=True,
                  sort_direction=SortDirection.newest_first,
                  batch_size=500):
-        self._delete_mode = delete_mode
-        self._is_nip16 = is_nip16
         self._sort_direction = sort_direction
         self._db = db
         self._batch_size = batch_size
+
+        NIPSupport.__init__(self,
+                            delete_mode=delete_mode,
+                            nip16=is_nip16,
+                            nip33=is_nip33)
 
     async def add_event(self, evt: Event):
         for c_batch in GenericSQL.get_add_batch(the_store=self,
@@ -861,10 +783,6 @@ class ASQLEventStore(AEventStoreInterface):
 
         return data.as_arr(True)
 
-    @property
-    def delete_mode(self):
-        return self._delete_mode
-
     async def do_delete(self, evt: Event):
         """
         Not sure if this method is useful...probably add_event of a delete event is better?
@@ -879,228 +797,69 @@ class ASQLEventStore(AEventStoreInterface):
                                             evt=evt)
         await self._db.execute_batch(batch)
 
-    def is_NIP16(self) -> bool:
-        return self._is_nip16
 
-
-class RelaySQLiteEventStore(RelayEventStoreInterface, ABC):
-    """
-        sqlite version of event store implementing method required by relay
-    """
-    def __init__(self,
-                 db_file,
-                 is_nip16=True,
-                 delete_mode=DeleteMode.flag):
-        self._db_file = db_file
-        self._db = SQLiteDatabase(self._db_file)
-        self._event_store = SQLEventStore(
-            db=self._db,
-            delete_mode=delete_mode,
-            is_nip16=is_nip16
-        )
-        logging.debug('RelaySQLiteEventStore::__init__ file: %s' % self._db_file)
-
-    def add_event(self, evt: Event):
-        self._event_store.add_event(evt)
-
-    def do_delete(self, evt: Event):
-        self._event_store.do_delete(evt)
-
-    def get_filter(self, filter) -> [{}]:
-        return self._event_store.get_filter(filter)
-
-    def is_NIP16(self) -> bool:
-        return self._event_store.is_NIP16()
-
-    @property
-    def delete_mode(self):
-        return self._event_store.delete_mode
-
-    def is_NIP09(self):
-        return self.delete_mode in (DeleteMode.flag, DeleteMode.delete)
-
-    def create(self):
-        self._db.execute_batch(SQLiteSQL.get_create_relay_db())
-
-    def exists(self):
-        return Path(self._db.file).is_file()
-
-    def destroy(self):
-        os.remove(self._db.file)
-
-
-class ARelaySQLiteEventStore(ARelayEventStoreInterface, ABC):
-    """
-        async sqlite version of event store implementing method required by relay
-    """
-    def __init__(self,
-                 db_file,
-                 is_nip16=True,
-                 delete_mode=DeleteMode.flag):
-        self._db_file = db_file
-        self._db = ASQLiteDatabase(self._db_file)
-        self._event_store = ASQLEventStore(
-            db=self._db,
-            is_nip16=is_nip16,
-            delete_mode=delete_mode
-        )
-        logging.debug('ARelaySQLiteEventStore::__init__ file: %s' % self._db_file)
-
-    async def add_event(self, evt: Event):
-        await self._event_store.add_event(evt)
-
-    async def do_delete(self, evt: Event):
-        await self._event_store.do_delete(evt)
-
-    async def get_filter(self, filter) -> [{}]:
-        return await self._event_store.get_filter(filter)
-
-    def is_NIP16(self) -> bool:
-        return self._event_store.is_NIP16()
-
-    @property
-    def delete_mode(self):
-        return self._event_store.delete_mode
-
-    def is_NIP09(self):
-        return self.delete_mode in (DeleteMode.flag, DeleteMode.delete)
-
-    async def create(self):
-        await self._db.execute_batch(SQLiteSQL.get_create_relay_db())
-
-    def exists(self):
-        return Path(self._db.file).is_file()
-
-    def destroy(self):
-        os.remove(self._db.file)
-
-
-class ClientSQLiteEventStore(ClientEventStoreInterface, ABC):
-    """
-        sqlite version of event store implementing method required by client
-    """
-    def __init__(self,
-                 db_file,
-                 full_text=True,
-                 batch_size=500):
-
-        self._db_file = db_file
-        self._db = SQLiteDatabase(self._db_file)
-        self._event_store = SQLEventStore(
-            db=self._db,
-            sort_direction=SortDirection.newest_first,
-            batch_size=batch_size
-        )
-
-        self._full_text = full_text
-        logging.debug('Experimental client sqllite fulltext search: %s' % self._full_text)
-
-    def add_event(self, evt: Event):
-        self._event_store.add_event(evt)
-
-    def do_delete(self, evt: Event):
-        self._event_store.do_delete(evt)
-
-    def get_filter(self, filter) -> [{}]:
-        return self._event_store.get_filter(filter)
-
-    def is_NIP16(self) -> bool:
-        return self._event_store.is_NIP16()
-
-    @property
-    def delete_mode(self):
-        return self._event_store.delete_mode
-
-    async def add_event_relay(self, evt: Event, relay_url: str):
-        pass
-
-    async def get_newest(self, for_relay, filter):
-        pass
-
-    async def get_oldest(self, for_relay, filter):
-        pass
-
-    async def event_relay(self, event_id: str) -> [str]:
-        pass
-
-    async def direct_messages(self, pub_k: str) -> DataSet:
-        pass
-
-    async def relay_list(self, pub_k: str = None) -> []:
-        pass
-
-    def create(self):
-        self._db.execute_batch(SQLiteSQL.get_create_relay_db())
-
-    def exists(self):
-        return Path(self._db.file).is_file()
-
-    def destroy(self):
-        os.remove(self._db.file)
-
-
-class AClientSQLiteEventStore(AClientEventStoreInterface, ABC):
-    """
-        async sqlite version of event store implementing method required by client
-    """
-    def __init__(self,
-                 db_file,
-                 full_text=True,
-                 batch_size=500):
-
-        self._db_file = db_file
-        self._db = ASQLiteDatabase(self._db_file)
-        self._event_store = ASQLEventStore(
-            db=self._db,
-            sort_direction=SortDirection.newest_first,
-            batch_size=batch_size
-        )
-
-        self._full_text = full_text
-        logging.debug('Experimental client sqllite fulltext search: %s' % self._full_text)
-
-    async def add_event(self, evt: Event):
-        await self._event_store.add_event(evt)
-
-    async def do_delete(self, evt: Event):
-        await self._event_store.do_delete(evt)
-
-    async def get_filter(self, filter) -> [{}]:
-        return await self._event_store.get_filter(filter)
-
-    def is_NIP16(self) -> bool:
-        return self._event_store.is_NIP16()
-
-    @property
-    def delete_mode(self):
-        return self._event_store.delete_mode
-
-    async def add_event_relay(self, evt: Event, relay_url: str):
-        pass
-
-    async def get_newest(self, for_relay, filter):
-        pass
-
-    async def get_oldest(self, for_relay, filter):
-        pass
-
-    async def event_relay(self, event_id: str) -> [str]:
-        pass
-
-    async def direct_messages(self, pub_k: str) -> DataSet:
-        pass
-
-    async def relay_list(self, pub_k: str = None) -> []:
-        pass
-
-    async def create(self):
-        await self._db.execute_batch(SQLiteSQL.get_create_relay_db())
-
-    def exists(self):
-        return Path(self._db.file).is_file()
-
-    def destroy(self):
-        os.remove(self._db.file)
+# class ClientSQLiteEventStore(ClientEventStoreInterface, ABC):
+#     """
+#         sqlite version of event store implementing method required by client
+#     """
+#     def __init__(self,
+#                  db_file,
+#                  full_text=True,
+#                  batch_size=500):
+#
+#         self._db_file = db_file
+#         self._db = SQLiteDatabase(self._db_file)
+#         self._event_store = SQLEventStore(
+#             db=self._db,
+#             sort_direction=SortDirection.newest_first,
+#             batch_size=batch_size
+#         )
+#
+#         self._full_text = full_text
+#         logging.debug('Experimental client sqllite fulltext search: %s' % self._full_text)
+#
+#     def add_event(self, evt: Event):
+#         self._event_store.add_event(evt)
+#
+#     def do_delete(self, evt: Event):
+#         self._event_store.do_delete(evt)
+#
+#     def get_filter(self, filter) -> [{}]:
+#         return self._event_store.get_filter(filter)
+#
+#     def is_NIP16(self) -> bool:
+#         return self._event_store.is_NIP16()
+#
+#     @property
+#     def delete_mode(self):
+#         return self._event_store.delete_mode
+#
+#     async def add_event_relay(self, evt: Event, relay_url: str):
+#         pass
+#
+#     async def get_newest(self, for_relay, filter):
+#         pass
+#
+#     async def get_oldest(self, for_relay, filter):
+#         pass
+#
+#     async def event_relay(self, event_id: str) -> [str]:
+#         pass
+#
+#     async def direct_messages(self, pub_k: str) -> DataSet:
+#         pass
+#
+#     async def relay_list(self, pub_k: str = None) -> []:
+#         pass
+#
+#     def create(self):
+#         self._db.execute_batch(SQLiteSQL.get_create_relay_db())
+#
+#     def exists(self):
+#         return Path(self._db.file).is_file()
+#
+#     def destroy(self):
+#         os.remove(self._db.file)
 
 
 class RelayPostgresEventStore(RelayEventStoreInterface, ABC):
@@ -1149,7 +908,7 @@ class RelayPostgresEventStore(RelayEventStoreInterface, ABC):
         return self.delete_mode in (DeleteMode.flag, DeleteMode.delete)
 
     def create(self):
-        self._db.execute_batch(SQLiteSQL.get_create_relay_db())
+        self._db.execute_batch(PostgresSQL.get_create_relay_db())
 
     def exists(self):
         ret = False

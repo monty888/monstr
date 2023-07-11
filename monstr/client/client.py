@@ -60,7 +60,6 @@ class Client:
                  on_ok: Callable = None,
                  read: bool = True,
                  write: bool = True,
-                 emulate_eose: bool = True,
                  timeout: int = 5,
                  ping_timeout: int = 30,
                  query_timeout: int = 10,
@@ -94,11 +93,6 @@ class Client:
         self._on_notice = on_notice
         # nip-20 command infos
         self._on_ok = on_ok
-        # if relay doesn't support eose should we try and emulate it?
-        # this is done by calling the eose func when we first recieve events for a sub
-        # and then waiting for a delay (2s) after which we assume that is the end of stored events
-        # for that sub
-        self._emulate_eose = emulate_eose
 
         # set true if we're currently connected
         self._is_connected = False
@@ -308,15 +302,10 @@ class Client:
         the_evt: Event
         ret = self._subs[sub_id]['is_eose']
 
-        # these are stored events
+        # there are stored events
         if ret is False:
-            if self.relay_supports_eose or self._emulate_eose:
-                self._subs[sub_id]['events'].append(Event.from_JSON(message[2]))
-                self._subs[sub_id]['last_event'] = datetime.now()
-            else:
-                # eose not supported by relay and we're not emulating
-                self._subs[sub_id]['is_eose'] = True
-                ret = True
+            self._subs[sub_id]['events'].append(Event.from_JSON(message[2]))
+            self._subs[sub_id]['last_event'] = datetime.now()
 
         return ret
 
@@ -436,35 +425,16 @@ class Client:
             'start_time': datetime.now(),
             'last_event': None
         }
-        # most relays support eose to hopefully this wouldn't ever be needed... it might happen
-        # if we've be unable to get the relay information as we default to eose False as True
-        # is worse if the relay doesn't support EOSE - we'd gather up events for an EOSE that'll never come
-        if not self.relay_supports_eose and self._emulate_eose:
-            logging.debug('emulating EOSE for sub_id %s' % sub_id)
-            asyncio.create_task(self.eose_emulate(sub_id))
-            # def my_emulate():
-            #     is_wait = True
-            #     from datetime import timedelta
-            #     while is_wait:
-            #         sub_info = self._subs[sub_id]
-            #         now = datetime.now()
-            #         if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
-            #                 (now - sub_info['start_time'] > timedelta(seconds=2)):
-            #             is_wait = False
-            #         time.sleep(1)
-            #
-            #     self._on_message(self._ws, json.dumps(['EOSE', sub_id]))
-            # Thread(target=my_emulate).start()
 
         self._publish_q.put_nowait(the_req)
         return sub_id
 
     async def eose_emulate(self, sub_id):
         wait = True
+        sub_info = self._subs[sub_id]
         while wait:
             await asyncio.sleep(1)
             now = datetime.now()
-            sub_info = self._subs[sub_id]
             if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
                     (now - sub_info['start_time'] > timedelta(seconds=2)):
                 wait = False
@@ -538,14 +508,14 @@ class Client:
     def relay_information(self):
         return self._relay_info
 
-    @property
-    def relay_supports_eose(self):
-        # assumed False if we haven't been able to get relay info
-        ret = False
-        if self._relay_info:
-            ret = 'supported_nips' in self._relay_info \
-                  and 15 in self._relay_info['supported_nips']
-        return ret
+    # @property
+    # def relay_supports_eose(self):
+    #     # assumed False if we haven't been able to get relay info
+    #     ret = False
+    #     if self._relay_info:
+    #         ret = 'supported_nips' in self._relay_info \
+    #               and 15 in self._relay_info['supported_nips']
+    #     return ret
 
     @property
     def read(self) -> bool:
