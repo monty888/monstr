@@ -2,10 +2,6 @@
 
 Monstr: Python Nostr module. Python code for working with nostr.
 
-```sh
-pip install monstr
-```
-
 * A basic relay implementation for testing against locally
 * Client for working with a single relay
 * ClientPool for working with multiple relays
