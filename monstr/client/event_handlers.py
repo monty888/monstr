@@ -202,7 +202,7 @@ class PrintEventHandler(EventHandler):
                                evt.content))
 
 
-class LastEventHandler:
+class LastEventHandler(EventHandler):
     """
         use to keep track of the last time we received events for a given relay
     """
@@ -210,7 +210,11 @@ class LastEventHandler:
         self._url_time_map = {}
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
-        self._url_time_map[the_client.url] = datetime.now()
+        self.set_now(the_client)
+
+    def set_now(self, the_client):
+        url = self._client_url(the_client)
+        self._url_time_map[url] = datetime.now()
 
     @staticmethod
     def _client_url(the_client) -> str:
@@ -221,13 +225,13 @@ class LastEventHandler:
 
     def get_last_event_dt(self, the_client: Client) -> datetime:
         ret = None
-        url = LastEventHandler._client_url(the_client)
+        url = self._client_url(the_client)
         if url in self._url_time_map:
             ret = self._url_time_map[url]
         return ret
 
     def set_last_event_dt(self, the_client: Client, dt: datetime):
-        self._url_time_map[LastEventHandler._client_url(the_client)] = dt
+        self._url_time_map[self._client_url(the_client)] = dt
 
 
 class DecryptPrintEventHandler(PrintEventHandler):

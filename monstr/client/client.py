@@ -63,6 +63,7 @@ class Client:
                  timeout: int = 5,
                  ping_timeout: int = 30,
                  query_timeout: int = 10,
+                 eose_timeout: int = 10,
                  ssl=None):
 
         # url of relay to connect
@@ -87,7 +88,7 @@ class Client:
         self._on_connect = on_connect
         # change in connection state, e.g. lost con or ping update...
         self._on_status = on_status
-        # on recieveng the eose event or if emulate is true after emulation is done
+        # on recieveng the eose event
         self._on_eose = on_eose
         # on recieving any notice events from the relay
         self._on_notice = on_notice
@@ -123,6 +124,10 @@ class Client:
         self._ping_timeout = ping_timeout
         # timeout default for query method
         self._query_timeout = query_timeout
+        # if we didn't get an eose after this time we'll force it ourself and over
+        # events will be recieved as on_event, set None if you don't want this
+        # should set this higher than any resonable period you'd expect for your queries
+        self._eose_timeout = eose_timeout
 
     async def run(self):
         reconnect_delay = 1
@@ -230,26 +235,7 @@ class Client:
         elif type == 'EOSE':
             if len(message) >= 1:
                 sub_id = message[1]
-                # if relay support nip15 you get this event after the relay has sent the last stored event
-                # at the moment a single function but might be better to add as option to subscribe
-                if not self.have_sub(sub_id):
-                    logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
-                    self.unsubscribe(sub_id)
-
-                # eose just for the func
-                if self._subs[sub_id]['eose_func'] is not None:
-                    self._subs[sub_id]['eose_func'](self, sub_id, self._subs[sub_id]['events'])
-
-                # client level eose
-                elif self._on_eose:
-                    self._on_eose(self, sub_id, self._subs[sub_id]['events'])
-
-
-                # no longer needed
-                logging.debug('end of stored events for %s - %s events received' % (sub_id,
-                                                                                    len(self._subs[sub_id]['events'])))
-                self._subs[sub_id]['events'] = []
-                self._subs[sub_id]['is_eose'] = True
+                self._do_eose(sub_id)
             else:
                 logging.debug('Client::_on_message - not enough data in EOSE message - %s ' % message)
 
@@ -285,29 +271,51 @@ class Client:
                     sub_id, message))
             return
 
-        if self.have_sub(sub_id) and self._check_eose(sub_id, message):
-            try:
-                the_evt = Event.from_JSON(message[2])
-                for c_handler in self._subs[sub_id]['handlers']:
-                    try:
-                        c_handler.do_event(self, sub_id, the_evt)
-                    except Exception as e:
-                        logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
+        if self.have_sub(sub_id):
+            the_sub = self._subs[sub_id]
+            # still receiving stored events
+            if the_sub['is_eose'] is False:
+                the_sub['events'].append(Event.from_JSON(message[2]))
+                the_sub['last_event'] = datetime.now()
 
-            except Exception as e:
-                # TODO: add name property to handlers
-                logging.debug('Client::_do_events %s' % (e))
+            # receiving adhoc events
+            else:
+                try:
+                    the_evt = Event.from_JSON(message[2])
+                    for c_handler in the_sub['handlers']:
+                        try:
+                            c_handler.do_event(self, sub_id, the_evt)
+                        except Exception as e:
+                            logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
 
-    def _check_eose(self, sub_id, message):
-        the_evt: Event
-        ret = self._subs[sub_id]['is_eose']
+                except Exception as e:
+                    # TODO: add name property to handlers
+                    logging.debug('Client::_do_events %s' % (e))
 
-        # there are stored events
-        if ret is False:
-            self._subs[sub_id]['events'].append(Event.from_JSON(message[2]))
-            self._subs[sub_id]['last_event'] = datetime.now()
+    def _do_eose(self, sub_id):
+        # maybe it took to long and we already force eose or else sub that already got unsubscribed?
+        if not self.have_sub(sub_id):
+            logging.debug('Client::_on_message EOSE event for unknown sub_id?!??!! - %s' % sub_id)
+            # self.unsubscribe(sub_id)
+        else:
+            the_sub = self._subs[sub_id]
+            if the_sub['is_eose'] is True:
+                logging.debug(f'end of stored events for {sub_id} - already seen, maybe it was force timedout?')
+            else:
+                # call the EOSE func if any
+                # sub has its own eose
+                if the_sub['eose_func'] is not None:
+                    the_sub['eose_func'](self, sub_id, the_sub['events'])
+                # client level EOSE
+                elif self._on_eose:
+                    self._on_eose(self, sub_id, the_sub['events'])
 
-        return ret
+                logging.debug(f'end of stored events for {sub_id} - {len(the_sub["events"])} events received')
+
+                # clear cause we won't need any longer
+                self._subs[sub_id]['events'] = []
+                # mark the eose as haveing taken place
+                self._subs[sub_id]['is_eose'] = True
 
     async def _my_producer(self, ws: aiohttp.ClientWebSocketResponse):
         while True:
@@ -416,6 +424,7 @@ class Client:
         elif not hasattr(handlers, '__iter__') or isinstance(handlers, ClientPool):
             handlers = [handlers]
 
+        # if same id already exists its just overidden
         self._subs[sub_id] = {
             'handlers': handlers,
             # a sub can have it's own eose, if it does it'll be called in place of the client level eose
@@ -427,20 +436,30 @@ class Client:
         }
 
         self._publish_q.put_nowait(the_req)
+
+        async def eose_timeout():
+            await asyncio.sleep(self._eose_timeout)
+            if self.have_sub(sub_id) and self._subs[sub_id]['is_eose'] is False:
+                self._do_eose(sub_id)
+
+        if self._eose_timeout:
+            asyncio.create_task(eose_timeout())
+
+
         return sub_id
 
-    async def eose_emulate(self, sub_id):
-        wait = True
-        sub_info = self._subs[sub_id]
-        while wait:
-            await asyncio.sleep(1)
-            now = datetime.now()
-            if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
-                    (now - sub_info['start_time'] > timedelta(seconds=2)):
-                wait = False
-
-        # it's been some time since we saw a new event so fire the EOSE event
-        self._on_message(['EOSE', sub_id])
+    # async def eose_emulate(self, sub_id):
+    #     wait = True
+    #     sub_info = self._subs[sub_id]
+    #     while wait:
+    #         await asyncio.sleep(1)
+    #         now = datetime.now()
+    #         if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
+    #                 (now - sub_info['start_time'] > timedelta(seconds=2)):
+    #             wait = False
+    #
+    #     # it's been some time since we saw a new event so fire the EOSE event
+    #     self._on_message(['EOSE', sub_id])
 
     def unsubscribe(self, sub_id):
         if not self.have_sub(sub_id):

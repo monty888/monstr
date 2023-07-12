@@ -8,7 +8,7 @@ import sys
 import asyncio
 import signal
 from monstr.client.client import Client
-from monstr.client.event_handlers import EventHandler
+from monstr.client.event_handlers import EventHandler, LastEventHandler
 from monstr.event.event import Event
 from monstr.util import util_funcs
 from monstr.encrypt import Keys
@@ -19,7 +19,7 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
                                                               relay))
 
     # track last since so that if we reconnect we don't ask for everything again
-    last_since = None
+    last_since = LastEventHandler()
     sub_id = None
 
     class PrintHandler(EventHandler):
@@ -39,13 +39,14 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
             'authors': [for_key],
             'limit': 10
         }
-        if last_since:
-            filter['since'] = last_since
+
+        if last_since.get_last_event_dt(the_client):
+            filter['since'] = util_funcs.date_as_ticks(last_since.get_last_event_dt(the_client))+1
 
         # sub_id will be rnd asigned but we'll keep it the same from then on
         sub_id = the_client.subscribe(filters=filter,
                                       sub_id=sub_id,
-                                      handlers=my_handler)
+                                      handlers=[last_since, my_handler])
 
 
     # this will do the store events on first connect or reconnect after some time
@@ -54,6 +55,8 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
         Event.sort(events, inplace=True, reverse=False)
         for evt in events:
             print_event('EOSE', evt)
+        last_since.set_now(the_client)
+
 
     def print_event(rec_type:str, evt: Event):
         print('%s-%s:: %s - %s' % (evt.created_at.date(),

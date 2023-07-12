@@ -142,8 +142,11 @@ class Relay:
 
         nips.sort()
 
-        logging.info(f"""Relay::__init__ maxsub={self._max_sub}
-            Deletes(NIP9)={self._nip09}, Event treatment(NIP16)={self._nip16}, Commands(NIP20)={self._ack_events}""")
+        logging.info(f'Relay::__init__ maxsub={self._max_sub}, '
+            f'Deletes(NIP9)={self._nip09}, ' 
+            f'Event treatment(NIP16)={self._nip16}, ' 
+            f'Commands(NIP20)={self._ack_events}, ' 
+            f'Parameterized Replaceable Events(NIP33)={self._nip33}')
 
         self._relay_information = {
             'software': 'https://github.com/monty888/monstr',
@@ -423,7 +426,6 @@ class Relay:
         for c_evt in evts:
             await self._send_event(ws, sub_id, c_evt)
 
-        # send EOSE
         await self._send_eose(ws, sub_id)
 
     async def _do_unsub(self, req_json, ws):
