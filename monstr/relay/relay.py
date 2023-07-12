@@ -56,6 +56,9 @@ class Relay:
                         deal with it.
                         https://github.com/nostr-protocol/nips/blob/master/20.md
 
+        NIP-33      -   Parameterized Replaceable Events, replaceable events like nip16 but with added d_tag
+                        https://github.com/nostr-protocol/nips/blob/master/33.md
+
         for NIPS n,n... whats actually being implemented will be decided by the store/properties it was created with
         e.g. delete example....
         For NIP-12 the relay will check with the store for those NIPs
@@ -72,7 +75,8 @@ class Relay:
                  description: str = None,
                  pubkey: str = None,
                  contact: str = None,
-                 ack_events=True):
+                 ack_events=True,
+                 **kargs):
 
 
         # open web sockets
@@ -121,6 +125,8 @@ class Relay:
         # replacable and transient event ranges
         self._nip16 = self._store and self._store.NIP16
 
+        self._nip33 = self._store and self._store.NIP33
+
         nips = [1, 2, 11]
         # EOSE was removed as optional NIP so we'll no longer have this as option
         # if self._nip15:
@@ -131,16 +137,17 @@ class Relay:
             nips.append(16)
         if self._ack_events:
             nips.append(20)
+        if self._nip33:
+            nips.append(33)
 
         nips.sort()
 
         logging.info(f"""Relay::__init__ maxsub={self._max_sub}
             Deletes(NIP9)={self._nip09}, Event treatment(NIP16)={self._nip16}, Commands(NIP20)={self._ack_events}""")
 
-
         self._relay_information = {
-            'software': 'https://github.com/monty888/nostrpy',
-            'version': '0.1',
+            'software': 'https://github.com/monty888/monstr',
+            'version': '0.1.2',
             'supported_nips': nips
         }
         if name:
@@ -153,6 +160,14 @@ class Relay:
             if Keys.is_key(pubkey):
                 raise Exception('given contact pubkey is not correct: %s' % pubkey)
             self._relay_information['pubkey'] = pubkey
+
+        if 'relay_information' in kargs:
+            relay_info = kargs['relay_information']
+            if not isinstance(relay_info, dict):
+                raise ValueError('relay_information should be dict')
+            for k, v in relay_info.items():
+                # restrict keys?
+                self._relay_information[k] = v
 
     def _starter(self, host='localhost', port=8080, end_point='/', routes=None):
         # self._app.route(end_point, callback=self._handle_websocket)
@@ -458,6 +473,10 @@ class Relay:
         :return:
         """
         return web.Response(text=json.dumps(self._relay_information))
+
+    @property
+    def relay_information(self) -> dict:
+        return self._relay_information
 
 #    below are some routes that can be added to the monstr relay and give methods to access data via standard url in the
 #    webbrowser. Useful for testing, maybe also for other things?
