@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import logging
 from enum import Enum
 from monstr.event.event import Event
 from monstr.db.db import ADatabase, Database, ASQLiteDatabase, SQLiteDatabase, PostgresDatabase
@@ -370,40 +369,6 @@ class GenericSQL:
                 if _do_update(c_evt):
                     _prepare_add_event_batch(c_evt)
             yield batch
-
-
-class PostgresSQL:
-
-    @staticmethod
-    def get_create_relay_db():
-        """
-        tbl create sql, not the wrapper stuff to actually create the db in postgres
-        """
-        return [
-            {
-                'sql': """
-                           create table events( 
-                               id SERIAL PRIMARY KEY,  
-                               event_id text UNIQUE,  
-                               pubkey varchar(128),  
-                               created_at int,  
-                               kind int,  
-                               tags text,  
-                               content text,  
-                               sig varchar(128),  
-                               deleted int)
-                       """
-            },
-            {
-                'sql': """
-                           create table event_tags(
-                               id int,  
-                               type varchar(32),  
-                               value text)
-                       """
-            }
-            # TODO: needs delete trigger adding for event_relay
-        ]
 
 
 class NIPSupport:
@@ -862,110 +827,3 @@ class ASQLEventStore(AEventStoreInterface, NIPSupport):
 #         os.remove(self._db.file)
 
 
-class RelayPostgresEventStore(RelayEventStoreInterface, ABC):
-    """
-        postgres version of event store implementing method required by relay
-    """
-    def __init__(self,
-                 db_name: str,
-                 user: str,
-                 password: str,
-                 is_nip16=True,
-                 delete_mode=DeleteMode.flag):
-
-        self._db_name = db_name
-        self._user = user
-        self._password = password
-        self._db = PostgresDatabase(db_name=self._db_name,
-                                    user=self._user,
-                                    password=password)
-        self._event_store = SQLEventStore(
-            db=self._db,
-            delete_mode=delete_mode,
-            is_nip16=is_nip16
-        )
-        logging.debug('PostgresRelayEventStore::__init__ db=%s, user=%s, delete mode=%s' % (db_name,
-                                                                                            user,
-                                                                                            self.delete_mode))
-
-    def add_event(self, evt: Event):
-        self._event_store.add_event(evt)
-
-    def do_delete(self, evt: Event):
-        self._event_store.do_delete(evt)
-
-    def get_filter(self, filter) -> [{}]:
-        return self._event_store.get_filter(filter)
-
-    def is_NIP16(self) -> bool:
-        return self._event_store.is_NIP16()
-
-    @property
-    def delete_mode(self):
-        return self._event_store.delete_mode
-
-    def is_NIP09(self):
-        return self.delete_mode in (DeleteMode.flag, DeleteMode.delete)
-
-    def create(self):
-        self._db.execute_batch(PostgresSQL.get_create_relay_db())
-
-    def exists(self):
-        ret = False
-        try:
-            self._db.select_sql('select 1')
-            ret = True
-        except Exception as e:
-            pass
-        return ret
-
-    def destroy(self):
-        try:
-            import psycopg2
-        except:
-            raise Exception('RelayPostgresEventStore::destroy missing lib psycopg2')
-
-        # as create
-        c = psycopg2.connect("dbname=%s user=%s password=%s" % ('postgres',
-                                                                self._user,
-                                                                self._password))
-        c.autocommit = True
-        cur = c.cursor()
-        cur.execute(
-            """
-            SELECT  
-            pg_terminate_backend (pg_stat_activity.pid)
-            FROM
-                pg_stat_activity
-            WHERE
-            pg_stat_activity.datname = '%s';
-            """ % self._db_name
-        )
-        cur.execute('DROP DATABASE IF EXISTS "%s"' % self._db_name)
-
-    def create(self):
-        try:
-            import psycopg2
-        except:
-            raise Exception('RelayPostgresEventStore::destroy missing lib psycopg2')
-
-        # as create
-        c = psycopg2.connect("dbname=%s user=%s password=%s" % ('postgres',
-                                                                self._user,
-                                                                self._password))
-        c.autocommit = True
-        cur = c.cursor()
-        cur.execute(
-            """
-                CREATE DATABASE "%s"
-                    WITH 
-                    OWNER = postgres
-                    ENCODING = 'UTF8'
-                    LC_COLLATE = 'en_GB.UTF-8'
-                    LC_CTYPE = 'en_GB.UTF-8'
-                    TABLESPACE = pg_default
-                    CONNECTION LIMIT = -1;
-            """ % self._db_name
-        )
-
-        self._db.execute_batch(PostgresSQL.get_create_relay_db())
