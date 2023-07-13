@@ -127,7 +127,7 @@ class Relay:
 
         self._nip33 = self._store and self._store.NIP33
 
-        nips = [1, 2, 11]
+        nips = [1, 2, 11, 12]
         # EOSE was removed as optional NIP so we'll no longer have this as option
         # if self._nip15:
         #     nips.append(15)
