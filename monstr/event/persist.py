@@ -4,12 +4,9 @@ from monstr.event.event import Event
 from monstr.db.db import ADatabase, Database, ASQLiteDatabase, SQLiteDatabase, PostgresDatabase
 from monstr.data.data import DataSet
 from monstr.util import util_funcs
-
 """
-    rework of persist using async
-    probably replace existing persist in future
+    Interfaces for storing events, actual implementations now split into persist_<store_type>.py files
 """
-
 
 class DeleteMode(Enum):
     # action taken on recieveing a delete event
