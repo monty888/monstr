@@ -3,7 +3,7 @@ from enum import Enum
 from monstr.event.event import Event
 from monstr.db.db import ADatabase, Database, ASQLiteDatabase, SQLiteDatabase, PostgresDatabase
 from monstr.data.data import DataSet
-from monstr.util import util_funcs
+from monstr.util import util_funcs, NIPSupport
 """
     Interfaces for storing events, actual implementations now split into persist_<store_type>.py files
 """
@@ -18,6 +18,36 @@ class DeleteMode(Enum):
     flag = 2
     # nothing, ref events will still be returned to clients
     no_action = 3
+
+
+class StoreNipSupport(NIPSupport):
+    """
+        Nip support modified with the nips that are relevant to how we're storing
+    """
+    def __init__(self,
+                 delete_mode=DeleteMode.no_action,
+                 nip16: bool = False,
+                 nip33: bool = False):
+
+        self._delete_mode = delete_mode
+        super().__init__(
+            nip09=delete_mode != DeleteMode.no_action,
+            nip16=nip16,
+            nip33=nip33
+        )
+
+    @property
+    def delete_mode(self):
+        return self._delete_mode
+
+    def is_replaceable(self, evt: Event) -> bool:
+        return evt.is_replacable() and self.NIP16
+
+    def is_ephemeral(self, evt: Event) -> bool:
+        return evt.is_ephemeral() and self.NIP16
+
+    def is_parameter_replaceable(self, evt: Event) -> bool:
+        return evt.is_parameter_replacable() and self.NIP33
 
 
 class SortDirection(Enum):
@@ -368,51 +398,7 @@ class GenericSQL:
             yield batch
 
 
-class NIPSupport:
-    """
-        is_NIPnn methods, all returning False,
-        if store has support for nip it should override that isNIPnn method
-    """
-
-    def __init__(self,
-                 delete_mode=DeleteMode.no_action,
-                 nip16: bool = False,
-                 nip33: bool = False):
-
-        self._delete_mode = delete_mode
-        self._nip16 = nip16
-        self._nip33 = nip33
-
-    @property
-    def delete_mode(self):
-        return DeleteMode.no_action
-
-    @property
-    def NIP09(self) -> bool:
-        # event deletes https://github.com/nostr-protocol/nips/blob/master/09.md
-        return self._delete_mode != DeleteMode.no_action
-
-    @property
-    def NIP16(self) -> bool:
-        # event treatment https://github.com/nostr-protocol/nips/blob/master/16.md
-        return self._nip16
-
-    @property
-    def NIP33(self) -> bool:
-        # parameter replacable events https://github.com/nostr-protocol/nips/blob/master/33.md
-        return self._nip33
-
-    def is_replaceable(self, evt: Event) -> bool:
-        return evt.is_replacable() and self.NIP16
-
-    def is_ephemeral(self, evt: Event) -> bool:
-        return evt.is_ephemeral() and self.NIP16
-
-    def is_parameter_replaceable(self, evt: Event) -> bool:
-        return evt.is_parameter_replacable() and self.NIP33
-
-
-class EventStoreInterface(ABC, NIPSupport):
+class EventStoreInterface(ABC, StoreNipSupport):
 
     @abstractmethod
     def add_event(self, evt: Event):
@@ -437,16 +423,6 @@ class EventStoreInterface(ABC, NIPSupport):
         :param filter: [{filter}...] monstr filter
         :return: all evts in store that passed the filter
         """
-
-    # def is_replaceable(self, evt: Event) -> bool:
-    #     return evt.is_replacable() and self.is_NIP16()
-    #
-    # def is_parameter_replaceable(self, evt: Event) -> bool:
-    #     return evt.is_parameter_replacable() and self.is_NIP33()
-    #
-    # def is_ephemeral(self, evt: Event) -> bool:
-    #     return evt.is_ephemeral() and self.is_NIP16()
-
 
 class RelayEventStoreInterface(EventStoreInterface):
     """
@@ -515,7 +491,7 @@ class ClientEventStoreInterface(EventStoreInterface):
         """
 
 
-class AEventStoreInterface(ABC, NIPSupport):
+class AEventStoreInterface(ABC, StoreNipSupport):
     """
         async version of EventStoreInterface - Note as we've used the same method names rather
         than say add_event -> aadd_event the same class can't implement both interfaces
@@ -619,7 +595,7 @@ class AClientEventStoreInterface(AEventStoreInterface):
         """
 
 
-class SQLEventStore(EventStoreInterface, NIPSupport):
+class SQLEventStore(EventStoreInterface, StoreNipSupport):
     """
         sync sql event store
     """
@@ -631,10 +607,10 @@ class SQLEventStore(EventStoreInterface, NIPSupport):
                  sort_direction=SortDirection.newest_first,
                  batch_size=500):
 
-        NIPSupport.__init__(self,
-                            delete_mode=delete_mode,
-                            nip16=is_nip16,
-                            nip33=is_nip33)
+        StoreNipSupport.__init__(self,
+                                 delete_mode=delete_mode,
+                                 nip16=is_nip16,
+                                 nip33=is_nip33)
 
         self._sort_direction = sort_direction
         self._db = db
@@ -670,10 +646,6 @@ class SQLEventStore(EventStoreInterface, NIPSupport):
 
         return data.as_arr(True)
 
-    # @property
-    # def delete_mode(self):
-    #     return self._delete_mode
-
     def do_delete(self, evt: Event):
         """
         Not sure if this method is useful...probably add_event of a delete event is better?
@@ -687,15 +659,9 @@ class SQLEventStore(EventStoreInterface, NIPSupport):
         batch = GenericSQL.get_delete_batch(store=self,
                                             evt=evt)
         self._db.execute_batch(batch)
-    #
-    # def is_NIP16(self) -> bool:
-    #     return self._is_nip16
-    #
-    # def is_NIP33(self) -> bool:
-    #     return self.is_NIP33()
 
 
-class ASQLEventStore(AEventStoreInterface, NIPSupport):
+class ASQLEventStore(AEventStoreInterface, StoreNipSupport):
     """
         async base sql store
     """
@@ -710,10 +676,10 @@ class ASQLEventStore(AEventStoreInterface, NIPSupport):
         self._db = db
         self._batch_size = batch_size
 
-        NIPSupport.__init__(self,
-                            delete_mode=delete_mode,
-                            nip16=is_nip16,
-                            nip33=is_nip33)
+        StoreNipSupport.__init__(self,
+                                 delete_mode=delete_mode,
+                                 nip16=is_nip16,
+                                 nip33=is_nip33)
 
     async def add_event(self, evt: Event):
         for c_batch in GenericSQL.get_add_batch(the_store=self,

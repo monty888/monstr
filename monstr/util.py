@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    pass
+    from monstr.event.event import Event
 
 import time
 import sys
@@ -143,6 +143,57 @@ class util_funcs:
         def task():
             the_func(*args)
         return task
+
+
+class NIPSupport:
+    """
+        is_NIPnn methods, all returning False,
+        if store has support for nip it should override that isNIPnn method
+    """
+
+    def __init__(self,
+                 nip09: bool = None,
+                 nip16: bool = None,
+                 nip22: bool = None,
+                 nip33: bool = None):
+
+        self._nip_support = {
+            9: nip09,
+            16: nip16,
+            22: nip22,
+            33: nip33
+        }
+
+        # as list format, assumed won't change while running
+        self._nip_support_list = []
+        for k,v in self._nip_support.items():
+            if v is True:
+                self._nip_support_list.append(k)
+        self._nip_support_list.sort()
+
+    @property
+    def NIP09(self) -> bool:
+        # event deletes https://github.com/nostr-protocol/nips/blob/master/09.md
+        return self._nip_support[9]
+
+    @property
+    def NIP16(self) -> bool:
+        # event treatment https://github.com/nostr-protocol/nips/blob/master/16.md
+        return self._nip_support[16]
+
+    @property
+    def NIP22(self) -> bool:
+        # parameter replacable events https://github.com/nostr-protocol/nips/blob/master/33.md
+        return self._nip_support[22]
+
+    @property
+    def NIP33(self) -> bool:
+        # parameter replacable events https://github.com/nostr-protocol/nips/blob/master/33.md
+        return self._nip_support[33]
+
+    @property
+    def supported_nips(self) -> list:
+        return list(self._nip_support_list)
 
 
 class ConfigError(Exception):

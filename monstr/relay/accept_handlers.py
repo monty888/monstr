@@ -2,7 +2,7 @@ from datetime import datetime
 from aiohttp import http_websocket
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
 from monstr.event.event import Event
-from monstr.util import util_funcs
+from monstr.util import util_funcs, NIPSupport
 
 
 class AcceptReqHandler:
@@ -80,8 +80,42 @@ class ThrottleAcceptReqHandler(AcceptReqHandler):
                 self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
                 self.raise_err(event=evt,
                                success=False,
-                               message='blocked: pubkey %s posted to recently, posts most be %ss apart' % (evt.pub_key,
-                                                                                                           self._tickmin))
+                               message='blocked: pubkey %s posted too recently, posts most be %ss apart' % (evt.pub_key,
+                                                                                                            self._tickmin))
 
         # update last post for pubkey
         self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
+
+class CreateAtAcceptor(AcceptReqHandler, NIPSupport):
+    """
+        implements create_at range acceptance as NIP22
+        https://github.com/nostr-protocol/nips/blob/master/22.md
+    """
+    def __init__(self,
+                 max_before:int = None,
+                 max_after:int = None,
+                 descriptive_msg=True):
+        self._max_before = max_before
+        self._max_after = max_after
+
+        # one should be set but just incase
+        if self._max_after or self._max_before:
+            NIPSupport.__init__(self,
+                                nip22=True)
+        super().__init__(descriptive_msg)
+
+    def accept_post(self, ws: http_websocket, evt: Event):
+        now = util_funcs.date_as_ticks(datetime.now())
+        evt_time = evt.created_at_ticks
+        if self._max_before:
+            min_accept = now - self._max_before
+            if min_accept > evt_time:
+                self.raise_err(event=evt,
+                               success=False,
+                               message=f'blocked: event time is too early, event created_at: {evt_time} - min accepted: {min_accept}')
+        if self._max_after:
+            max_accept = now + self._max_after
+            if max_accept < evt_time:
+                self.raise_err(event=evt,
+                               success=False,
+                               message=f'blocked: event time is too late, event created_at: {evt_time} - max accepted: {max_accept}')

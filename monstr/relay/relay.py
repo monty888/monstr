@@ -14,6 +14,7 @@ from monstr.event.persist import RelayEventStoreInterface, ARelayEventStoreInter
 from monstr.encrypt import Keys
 from monstr.relay.accept_handlers import AcceptReqHandler
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
+from monstr.util import NIPSupport
 
 # from sqlite3 import IntegrityError
 # try:
@@ -68,7 +69,8 @@ class Relay:
     """
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
 
-    def __init__(self, store: RelayEventStoreInterface,
+    def __init__(self,
+                 store: RelayEventStoreInterface = None,
                  accept_req_handler=None,
                  max_sub=10,
                  name: str = None,
@@ -119,34 +121,33 @@ class Relay:
         if pubkey is not None and not Keys.is_key(pubkey):
             raise Exception('given contact pubkey is not correct: %s' % pubkey)
 
-        # deletes
-        self._nip09 = self._store and self._store.NIP09
+        # maybe nips should be a nip support obj itself?
+        nips = {1, 2, 11, 12}
+        # add nips supported by store if any
+        if self._store:
+            nips.update(set(self._store.supported_nips))
 
-        # replacable and transient event ranges
-        self._nip16 = self._store and self._store.NIP16
-
-        self._nip33 = self._store and self._store.NIP33
-
-        nips = [1, 2, 11, 12]
-        # EOSE was removed as optional NIP so we'll no longer have this as option
-        # if self._nip15:
-        #     nips.append(15)
-        if self._nip09:
-            nips.append(9)
-        if self._nip16:
-            nips.append(16)
+        # commands enabled ? add nip20
         if self._ack_events:
-            nips.append(20)
-        if self._nip33:
-            nips.append(33)
+            nips.add(20)
 
-        nips.sort()
+        # if any _accept_req check them and see if they mean we're supporting any additional nips
+        for c_accept in self._accept_req:
+            if isinstance(c_accept, NIPSupport):
+                nips.update(set(c_accept.supported_nips))
 
+        # output nip info - only named so may not be all...
         logging.info(f'Relay::__init__ maxsub={self._max_sub}, '
-            f'Deletes(NIP9)={self._nip09}, ' 
-            f'Event treatment(NIP16)={self._nip16}, ' 
-            f'Commands(NIP20)={self._ack_events}, ' 
-            f'Parameterized Replaceable Events(NIP33)={self._nip33}')
+                     f'Deletes(NIP9)={9 in nips}, '
+                     f'Event treatment(NIP16)={16 in nips}, '
+                     f'Commands(NIP20)={self._ack_events}, '
+                     f'Parameterized Replaceable Events(NIP33)={33 in nips}, '
+                     f'Created_at limits (NIP22)={22 in nips}',
+                     )
+
+        # need needs as list now
+        nips = list(nips)
+        nips.sort()
 
         self._relay_information = {
             'software': 'https://github.com/monty888/monstr',

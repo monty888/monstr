@@ -149,6 +149,37 @@ async def run(**kargs):
 
     signal.signal(signal.SIGINT, sigint_handler)
 
+async def relay_basic():
+    from monstr.relay.accept_handlers import CreateAtAcceptor
+    acceptors = [
+        CreateAtAcceptor(max_before=10,
+                         max_after=10)
+    ]
+
+    r = Relay(accept_req_handler=acceptors)
+
+    await r.start(port=8888)
+
+async def post_basic():
+    from monstr.encrypt import Keys
+    from monstr.client.client import Client
+
+    use_key = Keys()
+
+    n_evt = Event(kind=Event.KIND_TEXT_NOTE,
+                  content='accept me',
+                  pub_key=use_key.public_key_hex(),
+                  created_at=util_funcs.date_as_ticks(datetime.now()) + 1000)
+    n_evt.sign(use_key.private_key_hex())
+
+    def my_notice(err_txt):
+        print(err_txt)
+
+    async with Client(relay_url='ws://localhost:8888',
+                      on_notice=my_notice) as c:
+        c.publish(n_evt)
+        await asyncio.sleep(1)
+
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
@@ -159,4 +190,5 @@ if __name__ == "__main__":
     asyncio.run(run(import_relay=import_relay,
                     import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
                     import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
-    # asyncio.run(run())
+    # asyncio.run(relay_basic())
+    # asyncio.run(post_basic())
