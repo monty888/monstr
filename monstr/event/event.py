@@ -358,8 +358,8 @@ class Event:
             if t_lookup:
                 # just incase has been passed as str
                 t_filter = single_filter['#'+t_type]
-                if isinstance(t_filter, str):
-                    t_filter = [t_filter]
+                if not isinstance(t_filter, list):
+                    t_filter = [str(t_filter)]
 
                 for c_t in t_filter:
                     if c_t in t_lookup:

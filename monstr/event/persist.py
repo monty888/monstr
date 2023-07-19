@@ -116,8 +116,8 @@ class GenericSQL:
             def _do_tags(tag_type):
                 nonlocal args
                 t_filter = filter['#' + tag_type]
-                if isinstance(t_filter, str):
-                    t_filter = [t_filter]
+                if not isinstance(t_filter, list):
+                    t_filter = [str(t_filter)]
                 e_sql = """
                    %s id in 
                        (
