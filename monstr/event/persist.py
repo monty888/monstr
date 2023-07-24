@@ -20,7 +20,7 @@ class DeleteMode(Enum):
     no_action = 3
 
 
-class StoreNipSupport(NIPSupport):
+class StoreNIPSupport(NIPSupport):
     """
         Nip support modified with the nips that are relevant to how we're storing
     """
@@ -398,7 +398,7 @@ class GenericSQL:
             yield batch
 
 
-class EventStoreInterface(ABC, StoreNipSupport):
+class EventStoreInterface(ABC, StoreNIPSupport):
 
     @abstractmethod
     def add_event(self, evt: Event):
@@ -491,7 +491,7 @@ class ClientEventStoreInterface(EventStoreInterface):
         """
 
 
-class AEventStoreInterface(ABC, StoreNipSupport):
+class AEventStoreInterface(ABC, StoreNIPSupport):
     """
         async version of EventStoreInterface - Note as we've used the same method names rather
         than say add_event -> aadd_event the same class can't implement both interfaces
@@ -595,7 +595,7 @@ class AClientEventStoreInterface(AEventStoreInterface):
         """
 
 
-class SQLEventStore(EventStoreInterface, StoreNipSupport):
+class SQLEventStore(EventStoreInterface, StoreNIPSupport):
     """
         sync sql event store
     """
@@ -607,7 +607,7 @@ class SQLEventStore(EventStoreInterface, StoreNipSupport):
                  sort_direction=SortDirection.newest_first,
                  batch_size=500):
 
-        StoreNipSupport.__init__(self,
+        StoreNIPSupport.__init__(self,
                                  delete_mode=delete_mode,
                                  nip16=is_nip16,
                                  nip33=is_nip33)
@@ -660,8 +660,11 @@ class SQLEventStore(EventStoreInterface, StoreNipSupport):
                                             evt=evt)
         self._db.execute_batch(batch)
 
+    @property
+    def DB(self):
+        return self._db
 
-class ASQLEventStore(AEventStoreInterface, StoreNipSupport):
+class ASQLEventStore(AEventStoreInterface, StoreNIPSupport):
     """
         async base sql store
     """
@@ -676,7 +679,7 @@ class ASQLEventStore(AEventStoreInterface, StoreNipSupport):
         self._db = db
         self._batch_size = batch_size
 
-        StoreNipSupport.__init__(self,
+        StoreNIPSupport.__init__(self,
                                  delete_mode=delete_mode,
                                  nip16=is_nip16,
                                  nip33=is_nip33)
@@ -725,6 +728,9 @@ class ASQLEventStore(AEventStoreInterface, StoreNipSupport):
                                             evt=evt)
         await self._db.execute_batch(batch)
 
+    @property
+    def DB(self):
+        return self._db
 
 # class ClientSQLiteEventStore(ClientEventStoreInterface, ABC):
 #     """

@@ -11,7 +11,7 @@ import sys
 import asyncio
 
 from monstr.relay.relay import Relay
-from monstr.event.persist import RelayMemoryEventStore
+from monstr.event.persist_memory import RelayMemoryEventStore
 from monstr.event.event import Event
 from monstr.client.client import Client
 import time

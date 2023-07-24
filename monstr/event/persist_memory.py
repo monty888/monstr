@@ -1,9 +1,9 @@
 from monstr.event.event import Event
 from monstr.event.persist import EventStoreInterface, RelayEventStoreInterface,\
-    NIPSupport, DeleteMode, SortDirection
+    StoreNIPSupport, DeleteMode, SortDirection
 
 
-class MemoryEventStore(EventStoreInterface, NIPSupport):
+class MemoryEventStore(EventStoreInterface, StoreNIPSupport):
     """
         Basic event store implemented in mem using {}
         could be improved to purge old evts or at set size/number if evts
@@ -17,10 +17,10 @@ class MemoryEventStore(EventStoreInterface, NIPSupport):
                  is_nip33=True,
                  sort_direction=SortDirection.newest_first):
 
-        NIPSupport.__init__(self,
-                            delete_mode=delete_mode,
-                            nip16=is_nip16,
-                            nip33=is_nip33)
+        StoreNIPSupport.__init__(self,
+                                 delete_mode=delete_mode,
+                                 nip16=is_nip16,
+                                 nip33=is_nip33)
 
         self._sort_direction = sort_direction
 
