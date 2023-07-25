@@ -195,7 +195,7 @@ class NIPSupport:
 
     def NIP40(self) -> bool:
         # Expiration Timestamp https://github.com/nostr-protocol/nips/blob/master/40.md
-        return self._nip_support[33]
+        return self._nip_support[40]
 
     @property
     def supported_nips(self) -> list:
