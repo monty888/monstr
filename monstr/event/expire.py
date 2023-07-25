@@ -15,6 +15,7 @@ class AExpirerInterface(ABC, NIPSupport):
     def __init__(self, interval: int = 60):
         self._run = False
         self._interval = interval
+        NIPSupport.__init__(self, nip40=True)
 
     async def run(self):
         self._run = True

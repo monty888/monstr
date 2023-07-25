@@ -155,13 +155,15 @@ class NIPSupport:
                  nip09: bool = None,
                  nip16: bool = None,
                  nip22: bool = None,
-                 nip33: bool = None):
+                 nip33: bool = None,
+                 nip40: bool = None):
 
         self._nip_support = {
             9: nip09,
             16: nip16,
             22: nip22,
-            33: nip33
+            33: nip33,
+            40: nip40
         }
 
         # as list format, assumed won't change while running
@@ -189,6 +191,10 @@ class NIPSupport:
     @property
     def NIP33(self) -> bool:
         # parameter replacable events https://github.com/nostr-protocol/nips/blob/master/33.md
+        return self._nip_support[33]
+
+    def NIP40(self) -> bool:
+        # Expiration Timestamp https://github.com/nostr-protocol/nips/blob/master/40.md
         return self._nip_support[33]
 
     @property

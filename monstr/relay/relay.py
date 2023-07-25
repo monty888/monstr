@@ -170,8 +170,14 @@ class Relay:
             if not isinstance(relay_info, dict):
                 raise ValueError('relay_information should be dict')
             for k, v in relay_info.items():
-                # restrict keys?
-                self._relay_information[k] = v
+                # maybe handling some nips outside the relay, for example
+                # NIP40 expiration being run agaist the store
+                if k == 'supported_nips':
+                    self._relay_information[k] += v
+                    self._relay_information[k].sort()
+                else:
+                    self._relay_information[k] = v
+
 
     def _starter(self, host='localhost', port=8080, end_point='/', routes=None):
         # self._app.route(end_point, callback=self._handle_websocket)
