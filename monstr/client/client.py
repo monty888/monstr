@@ -382,7 +382,7 @@ class Client:
         total_time = 0
         con_count = self._connected_count
 
-        while is_done is False:
+        while is_done is False and self._run is True:
             if con_count != self._connected_count:
                 raise QueryLostConnectionException('Client::query - lost connection during query')
             if ret is None and timeout and total_time >= timeout:

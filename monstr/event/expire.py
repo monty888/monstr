@@ -207,8 +207,8 @@ async def test_expire_memory():
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
-    asyncio.run(test_expire_memory())
-    asyncio.run(test_expire_sql())
-
+    # asyncio.run(test_expire_memory())
+    # asyncio.run(test_expire_sql())
+    print(util_funcs.date_as_ticks(datetime.now()))
 
 

@@ -16,8 +16,8 @@ from monstr.util import util_funcs
 from aiohttp import web
 from pathlib import Path
 
-WORK_DIR = '%s/.nostrpy/' % Path.home()
-DB = WORK_DIR+'test_env.db'
+WORK_DIR = f'{Path.home()}/.nostrpy/'
+DB = f'{WORK_DIR}test_env.db'
 
 
 async def run_relay():
@@ -165,17 +165,18 @@ async def post_basic():
     from monstr.client.client import Client
 
     use_key = Keys()
+    from datetime import timedelta
 
     n_evt = Event(kind=Event.KIND_TEXT_NOTE,
                   content='accept me',
                   pub_key=use_key.public_key_hex(),
-                  created_at=util_funcs.date_as_ticks(datetime.now()) + 1000)
+                  created_at=util_funcs.date_as_ticks((datetime.now()+timedelta(minutes=6))))
     n_evt.sign(use_key.private_key_hex())
 
     def my_notice(err_txt):
         print(err_txt)
 
-    async with Client(relay_url='ws://localhost:8888',
+    async with Client(relay_url='ws://localhost:8081',
                       on_notice=my_notice) as c:
         c.publish(n_evt)
         await asyncio.sleep(1)
@@ -187,8 +188,8 @@ if __name__ == "__main__":
     import_relay = 'wss://nos.lol'
     util_funcs.create_sqlite_store(DB)
 
-    asyncio.run(run(import_relay=import_relay,
-                    import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
-                    import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
+    # asyncio.run(run(import_relay=import_relay,
+    #                 import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
+    #                 import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
     # asyncio.run(relay_basic())
-    # asyncio.run(post_basic())
+    asyncio.run(post_basic())

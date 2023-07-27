@@ -6,6 +6,7 @@ Monstr: Python Nostr module. Python code for working with nostr.
 * Client for working with a single relay
 * ClientPool for working with multiple relays
 * Keys for working with and converting between hex/npub/nsec
+* Entities for encoding and decoding NIP19 nostr entities
 
 # install
 ```sh

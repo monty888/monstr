@@ -5,8 +5,8 @@
 
 """
 from __future__ import annotations
-
 import hashlib
+import inspect
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from monstr.ident.event_handlers import ProfileEventHandlerInterface
@@ -170,10 +170,12 @@ class PrintEventHandler(EventHandler):
     def __init__(self,
                  event_acceptors=[],
                  view_on=True,
-                 profile_handler: ProfileEventHandlerInterface = None):
+                 profile_handler: ProfileEventHandlerInterface = None,
+                 max_length: int = None):
 
         self._view_on = view_on
         self._profile_handler = profile_handler
+        self._max_length = max_length
         super().__init__(event_acceptors)
 
     def view_on(self):
@@ -190,16 +192,36 @@ class PrintEventHandler(EventHandler):
             asyncio.create_task(self.display_func(the_client, sub_id, evt))
 
     async def display_func(self, the_client: Client, sub_id, evt: Event):
-        # single line basic evt info, override this if you want something more
-        profile_name = evt.pub_key
-        if self._profile_handler is not None:
-            profile_name = await self._profile_handler.get_profiles(pub_ks=profile_name,
-                                                                    create_missing=True)
-            profile_name = profile_name[0].display_name()
+        c_evt: Event
+        if isinstance(evt, Event):
+            evt = [evt]
 
-        print('%s: %s - %s' % (evt.created_at,
-                               util_funcs.str_tails(profile_name, 4),
-                               evt.content))
+        # if profile handler prefetch profiles
+        if self._profile_handler is not None:
+            if inspect.iscoroutinefunction(self._profile_handler.get_profiles):
+                await self._profile_handler.get_profiles(pub_ks=[c_evt.pub_key for c_evt in evt],
+                                                         create_missing=True)
+            else:
+                self._profile_handler.get_profiles(pub_ks=[c_evt.pub_key for c_evt in evt],
+                                                   create_missing=True)
+
+        for c_evt in evt:
+            profile_name = c_evt.pub_key
+            if self._profile_handler:
+                if inspect.iscoroutinefunction(self._profile_handler.get_profile):
+                    p: Profile = await self._profile_handler.get_profile(c_evt.pub_key)
+                else:
+                    p: Profile = self._profile_handler.get_profile(c_evt.pub_key)
+
+                profile_name = p.display_name()
+
+            content = c_evt.content
+            if self._max_length and len(content) > self._max_length:
+                content = content[:self._max_length-3]+ '...'
+
+            print('%s: %s - %s' % (c_evt.created_at,
+                                   util_funcs.str_tails(profile_name, 4),
+                                   content))
 
 
 class LastEventHandler(EventHandler):
