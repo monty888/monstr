@@ -22,3 +22,9 @@ class NostrCommandException(Exception):
 class NostrNoticeException(Exception):
     # exception raised that just return a notice to the caller
     pass
+
+
+class NostrNotAuthenticatedException(Exception):
+    # raised on client trying to do something that requires authentication when it hasn't authed
+    pass
+

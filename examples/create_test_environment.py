@@ -149,16 +149,24 @@ async def run(**kargs):
 
     signal.signal(signal.SIGINT, sigint_handler)
 
+
 async def relay_basic():
-    from monstr.relay.accept_handlers import CreateAtAcceptor
+    from monstr.relay.accept_handlers import CreateAtAcceptor, AuthenticatedAcceptor
+    from monstr.encrypt import Keys
     acceptors = [
         CreateAtAcceptor(max_before=10,
-                         max_after=10)
+                         max_after=10),
+        AuthenticatedAcceptor([
+            Keys.get_key('npub1nsdyr8qrv6yeymh6ayhwltrjzxpcyjeqavpw896ja9rnu6c2vc9sexxuwu').public_key_hex(),
+            '5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'
+        ])
+        # AuthenticatedAcceptor(authorised_keys=None)
     ]
 
-    r = Relay(accept_req_handler=acceptors)
+    r = Relay(accept_req_handler=acceptors, request_auth=True)
 
     await r.start(port=8888)
+
 
 async def post_basic():
     from monstr.encrypt import Keys
@@ -183,7 +191,7 @@ async def post_basic():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
     # import_relay = 'wss://nostr-pub.wellorder.net'
     import_relay = 'wss://nos.lol'
     util_funcs.create_sqlite_store(DB)
@@ -191,5 +199,5 @@ if __name__ == "__main__":
     # asyncio.run(run(import_relay=import_relay,
     #                 import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
     #                 import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
-    # asyncio.run(relay_basic())
-    asyncio.run(post_basic())
+    asyncio.run(relay_basic())
+    # asyncio.run(post_basic())

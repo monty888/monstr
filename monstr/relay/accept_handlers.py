@@ -1,8 +1,9 @@
 from datetime import datetime
 from aiohttp import http_websocket
-from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
+from monstr.relay.exceptions import NostrCommandException, NostrNoticeException, NostrNotAuthenticatedException
 from monstr.event.event import Event
 from monstr.util import util_funcs, NIPSupport
+
 
 
 class AcceptReqHandler:
@@ -86,6 +87,7 @@ class ThrottleAcceptReqHandler(AcceptReqHandler):
         # update last post for pubkey
         self._track[evt.pub_key] = util_funcs.date_as_ticks(datetime.now())
 
+
 class CreateAtAcceptor(AcceptReqHandler, NIPSupport):
     """
         implements create_at range acceptance as NIP22
@@ -119,3 +121,62 @@ class CreateAtAcceptor(AcceptReqHandler, NIPSupport):
                 self.raise_err(event=evt,
                                success=False,
                                message=f'blocked: event time is too late, event created_at: {evt_time} - max accepted: {max_accept}')
+
+
+class AuthenticatedAcceptor(AcceptReqHandler, NIPSupport):
+    """
+        basic implementation of acceptor that only accepts from certain authenticated pub keys
+        https://github.com/nostr-protocol/nips/blob/master/42.md
+
+        relay must also _request_auth True otherwise auth requests won't get sent so no-one will
+        ever get authenticated
+    """
+    def __init__(self,
+                 authorised_keys: set | list | None,
+                 descriptive_msg=True):
+
+        # hex pubkeys to accept - probably we should also accept [Keys] maybe even Profiles?
+        # can also set None, which will allow all so long as they authenticated an event
+        self.authorised_keys = authorised_keys
+
+        NIPSupport.__init__(self,
+                            nip42=True
+                            )
+        super().__init__(descriptive_msg)
+
+    @property
+    def authorised_keys(self) -> set:
+        return self._authorised_keys
+
+    @authorised_keys.setter
+    def authorised_keys(self, authorised_keys: list | set | None):
+        if isinstance(authorised_keys, list):
+            authorised_keys = set(authorised_keys)
+        self._authorised_keys = authorised_keys
+
+    def accept_post(self, ws: http_websocket, evt: Event):
+        try:
+            ret = evt.pub_key in ws.authenticated_pub_ks
+
+            # authenticated but not for key of the given event
+            if ret is False:
+                raise NostrNotAuthenticatedException(f'restricted: user {evt.pub_key} not yet authenticated')
+
+            # if authorised_keys is None then anyone can post so long as they authorised
+            # otherwise evt.pub_key must be in authorised_keys
+            ret = self.authorised_keys is None or \
+                  evt.pub_key in self.authorised_keys
+
+            if ret is False:
+                self.raise_err(event=evt,
+                               success=False,
+                               message=f'restricted: user {evt.pub_key} authenticated but not allowed')
+
+        # no authentication done at all yet?
+        except AttributeError as ae:
+            raise NostrNotAuthenticatedException(f'restricted: user {evt.pub_key} not yet authenticated')
+
+
+        return ret
+
+

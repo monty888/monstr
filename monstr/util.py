@@ -6,6 +6,8 @@ if TYPE_CHECKING:
 import time
 import sys
 from datetime import datetime
+import random
+from hashlib import md5
 import logging
 import os
 from pathlib import Path
@@ -144,6 +146,18 @@ class util_funcs:
             the_func(*args)
         return task
 
+    @staticmethod
+    def get_rnd_hex_str(length: int = 4):
+
+        """
+        :return: creates a randomish hex str of length used for sub_ids where not given
+        and by relay to generate challenge strs to be signed
+        max length that'll be returned is 32chars
+        """
+        ret = str(random.randrange(1, 1000)) + str(time.time())
+        ret = md5(ret.encode('utf8')).hexdigest()[:length]
+        return ret
+
 
 class NIPSupport:
     """
@@ -156,14 +170,16 @@ class NIPSupport:
                  nip16: bool = None,
                  nip22: bool = None,
                  nip33: bool = None,
-                 nip40: bool = None):
+                 nip40: bool = None,
+                 nip42: bool = None):
 
         self._nip_support = {
             9: nip09,
             16: nip16,
             22: nip22,
             33: nip33,
-            40: nip40
+            40: nip40,
+            42: nip42
         }
 
         # as list format, assumed won't change while running
@@ -193,9 +209,15 @@ class NIPSupport:
         # parameter replacable events https://github.com/nostr-protocol/nips/blob/master/33.md
         return self._nip_support[33]
 
+    @property
     def NIP40(self) -> bool:
         # Expiration Timestamp https://github.com/nostr-protocol/nips/blob/master/40.md
         return self._nip_support[40]
+
+    @property
+    def NIP42(self) -> bool:
+        # Authentication of clients to relays https://github.com/nostr-protocol/nips/blob/master/42.md
+        return self._nip_support[42]
 
     @property
     def supported_nips(self) -> list:

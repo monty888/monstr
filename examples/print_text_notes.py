@@ -57,7 +57,6 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
             print_event('EOSE', evt)
         last_since.set_now(the_client)
 
-
     def print_event(rec_type:str, evt: Event):
         print('%s-%s:: %s - %s' % (evt.created_at.date(),
                                    rec_type,
@@ -81,6 +80,7 @@ async def get_notes(for_key, relay='ws://localhost:8888/'):
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.ERROR)
     for_key = '5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'
+
     args = sys.argv[1:]
     if len(args):
         for_key = args[0]

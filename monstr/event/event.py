@@ -123,6 +123,9 @@ class Event:
     KIND_CHANNEL_HIDE = 43
     KIND_CHANNEL_MUTE = 44
 
+    # nip42 auth event
+    KIND_AUTH = 22242
+
     # a wrapped event to be republished see https://github.com/motorina0/nips/blob/republish_events/705.md
     KIND_REPUBLISH = 20001
 

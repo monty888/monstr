@@ -10,12 +10,11 @@ import logging
 import aiohttp
 import asyncio
 import json
-import random
-from hashlib import md5
 from json import JSONDecodeError
 from datetime import datetime, timedelta
 from monstr.util import util_funcs
 from monstr.event.event import Event
+from monstr.encrypt import Keys
 from enum import Enum
 
 
@@ -36,17 +35,6 @@ class QueryLostConnectionException(Exception):
     pass
 
 
-def _get_sub_id():
-    """
-    :return: creates a randomish 4digit hex to be used as sub_id if nothing supplied
-    should be plenty as should only be using a few subs at most and relay will probbaly be
-    restricting any more
-    """
-    ret = str(random.randrange(1, 1000)) + str(util_funcs.date_as_ticks(datetime.now()))
-    ret = md5(ret.encode('utf8')).hexdigest()[:4]
-    return ret
-
-
 class Client:
     """
         rewrite of client using asyncio
@@ -58,6 +46,7 @@ class Client:
                  on_eose: Callable = None,
                  on_notice: Callable = None,
                  on_ok: Callable = None,
+                 on_auth: Callable = None,
                  read: bool = True,
                  write: bool = True,
                  timeout: int = 5,
@@ -94,6 +83,8 @@ class Client:
         self._on_notice = on_notice
         # nip-20 command infos
         self._on_ok = on_ok
+        # nip42 authentication
+        self._on_auth = on_auth
 
         # set true if we're currently connected
         self._is_connected = False
@@ -203,7 +194,7 @@ class Client:
     async def _my_consumer(self, ws: aiohttp.ClientWebSocketResponse):
         while True:
             self._on_message(await ws.receive_json())
-        raise ConnectionError('Client::_my_consumer - server has closed the websocket')
+        # raise ConnectionError('Client::_my_consumer - server has closed the websocket')
 
     def _on_message(self, message):
         # null/None message?
@@ -217,7 +208,7 @@ class Client:
                 if self._read:
                     self._do_events(sub_id, message)
             else:
-                logging.debug('Client::_on_message - not enough data in EVENT message - %s ' % message)
+                logging.debug(f'Client::_on_message - not enough data in EVENT message - {message}')
 
         elif type == 'NOTICE':
             if len(message) >= 1:
@@ -225,11 +216,11 @@ class Client:
                 # check what other relays do... maybe they'll be some standard that gives more info
                 # as is can't do that much unless we want to look at the text and all realys might have different
                 # text for the same thing so...
-                logging.debug('NOTICE!! %s' % err_text)
+                logging.debug(f'NOTICE!! {err_text}')
                 if self._on_notice:
                     self._on_notice(self, err_text)
             else:
-                logging.debug('Client::_on_message - not enough data in NOTICE message - %s ' % message)
+                logging.debug(f'Client::_on_message - not enough data in NOTICE message - {message}')
         elif type == 'OK':
             self._do_command(message)
         elif type == 'EOSE':
@@ -237,31 +228,40 @@ class Client:
                 sub_id = message[1]
                 self._do_eose(sub_id)
             else:
-                logging.debug('Client::_on_message - not enough data in EOSE message - %s ' % message)
+                logging.debug(f'Client::_on_message - not enough data in EOSE message - {message}')
+        elif type == 'AUTH':
+            if len(message) >= 1:
+                challenge = message[1]
+                if self._on_auth is not None:
+                    self._do_auth(challenge)
+                else:
+                    logging.debug('Client::_on_message - recieved AUTH but no on_auth handler ')
+            else:
+                logging.debug(f'Client::_on_message - not enough data in AUTH message - {message}')
 
         else:
-            logging.debug('Network::_on_message unexpected type %s' % type)
+            logging.debug(f'Network::_on_message unexpected type {type}')
 
     def _do_command(self, message):
         try:
             if self._on_ok:
                 if len(message) < 3:
-                    raise Exception('Client::_do_command - not enough data in OK message - %s ' % message)
+                    raise Exception(f'Client::_do_command - not enough data in OK message - {message}')
 
                 event_id = message[1]
                 if not Event.is_event_id(event_id):
-                    raise Exception('Client::_do_command - OK message with invalid event_id - %s ' % message)
+                    raise Exception(f'Client::_do_command - OK message with invalid event_id - {message}')
 
                 success = message[2]
                 if not isinstance(success, bool):
-                    raise Exception('Client::_do_command - OK message success not valid value - %s ' % message)
+                    raise Exception(f'Client::_do_command - OK message success not valid value - {message}')
 
                 msg = message[3]
                 self._on_ok(self, event_id, success, msg)
             else:
-                logging.debug('Client::_do_command - OK message - %s' % message)
+                logging.debug(f'Client::_do_command - OK message - {message}')
         except Exception as e:
-            logging.debug(str(e))
+            logging.debug(f'Client::_do_command error sending message {e}')
 
     def _do_events(self, sub_id, message):
         the_evt: Event
@@ -286,11 +286,10 @@ class Client:
                         try:
                             c_handler.do_event(self, sub_id, the_evt)
                         except Exception as e:
-                            logging.debug('Client::_do_events in handler %s - %s' % (c_handler, e))
+                            logging.debug(f'Client::_do_events in handler {c_handler} - {e}')
 
                 except Exception as e:
-                    # TODO: add name property to handlers
-                    logging.debug('Client::_do_events %s' % (e))
+                    logging.debug(f'Client::_do_events error {e}')
 
     def _do_eose(self, sub_id):
         # maybe it took to long and we already force eose or else sub that already got unsubscribed?
@@ -304,11 +303,14 @@ class Client:
             else:
                 # call the EOSE func if any
                 # sub has its own eose
-                if the_sub['eose_func'] is not None:
-                    the_sub['eose_func'](self, sub_id, the_sub['events'])
-                # client level EOSE
-                elif self._on_eose:
-                    self._on_eose(self, sub_id, the_sub['events'])
+                try:
+                    if the_sub['eose_func'] is not None:
+                        the_sub['eose_func'](self, sub_id, the_sub['events'])
+                    # client level EOSE
+                    elif self._on_eose:
+                        self._on_eose(self, sub_id, the_sub['events'])
+                except Exception as e:
+                    logging.debug(f'Client::_on_eose - error in eose func {e}')
 
                 logging.debug(f'end of stored events for {sub_id} - {len(the_sub["events"])} events received')
 
@@ -316,6 +318,13 @@ class Client:
                 self._subs[sub_id]['events'] = []
                 # mark the eose as haveing taken place
                 self._subs[sub_id]['is_eose'] = True
+
+    def _do_auth(self, challenge: str):
+        try:
+            self._on_auth(self, challenge)
+        except Exception as e:
+            print(e)
+            logging.debug(f'Client::_do_auth - error {e}')
 
     async def _my_producer(self, ws: aiohttp.ClientWebSocketResponse):
         while True:
@@ -343,6 +352,21 @@ class Client:
                     'EVENT', evt.event_data()
                 ])
             )
+
+    def auth(self, with_keys:Keys, challenge: str):
+        auth_event = Event(kind=Event.KIND_AUTH,
+                           tags=[
+                               ['relay', self.url],
+                               ['challenge', challenge]
+                           ],
+                           pub_key=with_keys.public_key_hex())
+        auth_event.sign(with_keys.private_key_hex())
+
+        self._publish_q.put_nowait(
+            json.dumps([
+                'AUTH', auth_event.event_data()
+            ])
+        )
 
     async def query(self, filters: object = [],
                     do_event: object = None,
@@ -408,7 +432,7 @@ class Client:
 
         # no sub given, ok we'll generate one
         if sub_id is None:
-            sub_id = _get_sub_id()
+            sub_id = util_funcs.get_rnd_hex_str(4)
         the_req.append(sub_id)
         if isinstance(filters, dict):
             filters = [filters]
@@ -552,20 +576,23 @@ class Client:
     def read(self, is_write: bool):
         self._write = is_write
 
-    def set_on_status(self, on_status):
+    def set_on_status(self, on_status: Callable):
         self._on_status = on_status
 
-    def set_on_eose(self, on_eose):
+    def set_on_eose(self, on_eose: Callable):
         self._on_eose = on_eose
 
-    def set_on_connect(self, on_connect):
+    def set_on_connect(self, on_connect: Callable):
         self._on_connect = on_connect
 
-    def set_on_notice(self, on_notice):
+    def set_on_notice(self, on_notice: Callable):
         self._on_notice = on_notice
 
-    def set_on_ok(self, on_ok):
+    def set_on_ok(self, on_ok: Callable):
         self._on_ok = on_ok
+
+    def set_on_auth(self, on_auth: Callable):
+        self._on_auth = on_auth
 
     async def __aenter__(self):
         asyncio.create_task(self.run())
@@ -600,6 +627,7 @@ class ClientPool:
                  on_status: Callable = None,
                  on_eose: Callable = None,
                  on_notice: Callable = None,
+                 on_auth: Callable = None,
                  timeout: int = None,
                  **kargs
                  ):
@@ -610,11 +638,13 @@ class ClientPool:
         # subscription event handlers keyed on sub ids
         self._handlers = {}
 
-        # any clients methods are just set to come back to us so these are the on_methods
-        # that actually get called. Don't set the methods on the Clients directly
+        # we just set all the clients methods to whatever we have - except on status where ClientPool
+        # actually does status over all Clients - is it worth keeping these local refs when we never use
+        # ourself?
         self._on_connect = on_connect
         self._on_eose = on_eose
         self._on_notice = on_notice
+        self._on_auth = on_auth
 
         # our current run state
         self._state = RunState.init
@@ -650,8 +680,6 @@ class ClientPool:
         # if None we'll just wait forever until a client connects
         self._timeout = timeout
 
-
-
     def add(self, client, auto_start=False) -> Client:
         """
         :param auto_start: start the client if the pool is started
@@ -671,11 +699,15 @@ class ClientPool:
                                 on_connect=self._on_connect,
                                 on_eose=self._on_eose,
                                 on_notice=self._on_notice,
+                                on_auth=self._on_auth,
                                 ssl=self._ssl)
         elif isinstance(client, Client):
             the_client = client
             the_client.set_on_connect(self._on_connect)
+            the_client.set_on_notice(self._on_notice)
             the_client.set_on_eose(self._on_eose)
+            the_client.set_on_auth(self._on_auth)
+
         elif isinstance(client, dict):
             # read/write mode for client
             read = True
@@ -695,6 +727,8 @@ class ClientPool:
             the_client = Client(client_url,
                                 on_connect=self._on_connect,
                                 on_eose=self._on_eose,
+                                on_notice=self._on_notice,
+                                on_auth=self._on_auth,
                                 read=read,
                                 write=write,
                                 ssl=ssl)
@@ -763,13 +797,25 @@ class ClientPool:
 
         return the_client
 
-    def set_on_connect(self, on_connect):
-        for c_client in self:
+    def set_on_connect(self, on_connect: Callable):
+        self._on_connect = on_connect
+        for c_client in self.clients:
             c_client.set_on_connect(on_connect)
 
-    def set_on_eose(self, on_eose):
-        for c_client in self:
+    def set_on_eose(self, on_eose: Callable):
+        self._on_eose = on_eose
+        for c_client in self.clients:
             c_client.set_on_eose(on_eose)
+
+    def set_on_notice(self, on_notice: Callable):
+        self._on_notice = on_notice
+        for c_client in self.clients:
+            c_client.set_on_notice(on_notice)
+
+    def set_on_auth(self, on_auth: Callable):
+        self._on_auth = on_auth
+        for c_client in self.clients:
+            c_client.set_on_auth(on_auth)
 
     def _on_pool_status(self, relay_url, status):
         # the status we return gives each individual relay status at ['relays']
@@ -859,7 +905,7 @@ class ClientPool:
     def subscribe(self, sub_id=None, handlers=None, filters={}):
         c_client: Client
 
-        # same sub_id used for each client, wehere not given it'll be the generated id from the first client
+        # same sub_id used for each client, where not given it'll be the generated id from the first client
         for c_client in self:
             sub_id = c_client.subscribe(sub_id, self, filters)
 

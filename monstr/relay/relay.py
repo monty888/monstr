@@ -13,8 +13,9 @@ from monstr.event.event import Event
 from monstr.event.persist import RelayEventStoreInterface, ARelayEventStoreInterface
 from monstr.encrypt import Keys
 from monstr.relay.accept_handlers import AcceptReqHandler
-from monstr.relay.exceptions import NostrCommandException, NostrNoticeException
-from monstr.util import NIPSupport
+from monstr.relay.exceptions import NostrCommandException, NostrNoticeException, NostrNotAuthenticatedException
+from monstr.util import NIPSupport, util_funcs
+
 
 # from sqlite3 import IntegrityError
 # try:
@@ -60,6 +61,11 @@ class Relay:
         NIP-33      -   Parameterized Replaceable Events, replaceable events like nip16 but with added d_tag
                         https://github.com/nostr-protocol/nips/blob/master/33.md
 
+        NIP-44      -   Authentication of clients to relays
+                        https://github.com/nostr-protocol/nips/blob/master/42.md
+                        set request_auth True, then add a accept_req_handler that checks
+                        ws.authenticated_pub_ks for acceptance see accept_handlers/AuthenticatedAcceptor
+
         for NIPS n,n... whats actually being implemented will be decided by the store/properties it was created with
         e.g. delete example....
         For NIP-12 the relay will check with the store for those NIPs
@@ -67,7 +73,7 @@ class Relay:
         TODO: write some test code for each NIP...
 
     """
-    VALID_CMDS = ['EVENT', 'REQ', 'CLOSE']
+    VALID_CMDS = ['EVENT', 'REQ', 'CLOSE', 'AUTH']
 
     def __init__(self,
                  store: RelayEventStoreInterface = None,
@@ -78,6 +84,7 @@ class Relay:
                  pubkey: str = None,
                  contact: str = None,
                  ack_events=True,
+                 request_auth: bool = False,
                  **kargs):
 
 
@@ -106,6 +113,10 @@ class Relay:
         if self._accept_req is None:
             # accepts everything
             self._accept_req = [AcceptReqHandler()]
+
+        # send out auth request on connect also on auth exceptions from accept_req_handlers
+        self._request_auth = request_auth
+
         # convert to array of only single class handed in
         if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
@@ -123,6 +134,7 @@ class Relay:
 
         # maybe nips should be a nip support obj itself?
         nips = {1, 2, 11, 12}
+
         # add nips supported by store if any
         if self._store:
             nips.update(set(self._store.supported_nips))
@@ -136,13 +148,20 @@ class Relay:
             if isinstance(c_accept, NIPSupport):
                 nips.update(set(c_accept.supported_nips))
 
+        # maybe we should error our here, not request auth when we have acceptors that check auth means those acceptors
+        # will always fail!
+        if not self._request_auth and 42 in nips:
+            logging.debug('Relay::__init__ request_auth is False but have acceptor that requires authentication!?')
+            nips.remove(42)
+
         # output nip info - only named so may not be all...
         logging.info(f'Relay::__init__ maxsub={self._max_sub}, '
                      f'Deletes(NIP9)={9 in nips}, '
                      f'Event treatment(NIP16)={16 in nips}, '
                      f'Commands(NIP20)={self._ack_events}, '
                      f'Parameterized Replaceable Events(NIP33)={33 in nips}, '
-                     f'Created_at limits (NIP22)={22 in nips}',
+                     f'Created_at limits (NIP22)={22 in nips}, '
+                     f'Authentication of clients to relays(NIP42)={42 in nips}'
                      )
 
         # need needs as list now
@@ -178,7 +197,6 @@ class Relay:
                 else:
                     self._relay_information[k] = v
 
-
     def _starter(self, host='localhost', port=8080, end_point='/', routes=None):
         # self._app.route(end_point, callback=self._handle_websocket)
         self._host = host
@@ -194,10 +212,6 @@ class Relay:
 
         self._server = web.Application()
         self._server.on_shutdown.append(on_shutdown)
-
-
-
-        # self._server.router.add_route('*', '/{path_info:.*}', self._wsgi_handler)
 
         my_routes = [web.get(self._end_point, handler=self._websocket_handler)]
         if routes:
@@ -283,6 +297,10 @@ class Relay:
             'ws': ws
         }
 
+        # send an auth request?
+        if self._request_auth:
+            asyncio.create_task(self._send_auth(ws))
+
         async for msg in ws:
             if msg.type == aiohttp.WSMsgType.TEXT:
                 await self._do_request(ws, msg.data)
@@ -318,6 +336,8 @@ class Relay:
                 await self._do_sub(as_json, ws)
             elif cmd == 'CLOSE':
                 await self._do_unsub(as_json, ws)
+            elif cmd == 'AUTH':
+                await self._do_auth(as_json, ws)
 
         except JSONDecodeError as je:
             err = ['NOTICE', 'unable to decode command string']
@@ -327,18 +347,20 @@ class Relay:
             # NIP20 cmds only sent if ack_events is True - which it is by default
             if self._ack_events:
                 err = nc.get_data()
+        except NostrNotAuthenticatedException as nna:
+            err = ['NOTICE', str(nna)]
+            # send off auth request so they get chance to auth in future
+            if self._request_auth:
+                asyncio.create_task(self._send_auth(ws))
 
         if err:
             await self._do_send(ws=ws,
                                 data=err)
 
-    async def _persist_events(self):
-        async for job in self._write_queue:
-            print(job)
-
     async def _do_event(self, req_json, ws):
         if len(req_json) <= 1:
             raise NostrNoticeException('EVENT command missing event data')
+
         evt = Event.from_JSON(req_json[1])
         # check event sig matches pub_key
         if not evt.is_valid():
@@ -346,12 +368,10 @@ class Relay:
                                         success=False,
                                         message='invalid: signature validation failed')
 
-        # pass evt through all AcceptReqHandlers, if any are not happy they'll raise
-        # NostrCommandException otherwise we should be good to go
+        # check against any acceptors we've been handed
+        # acceptors may throw NostrCommandException, NostrNoticeException, NostrNotAuthenticatedException
         for c_accept in self._accept_req:
             c_accept.accept_post(ws, evt)
-        # if self._store:
-        #     self._write_queue.put_nowait((ws,evt))
 
         try:
             saved = False
@@ -371,8 +391,6 @@ class Relay:
         raise NostrCommandException(event_id=evt.id,
                                     success=saved,
                                     message='')
-
-
 
     async def _check_subs(self, evt: Event):
         """
@@ -452,11 +470,29 @@ class Relay:
         # not actual exception but this will send notice back that sub_id has been closed, might be useful to client?
         raise NostrNoticeException('CLOSE command for sub_id %s - success' % sub_id)
 
+    async def _do_auth(self, auth_json, ws):
+        if len(auth_json) <= 1:
+            raise NostrNoticeException('AUTH command missing event data')
+
+        evt = Event.from_JSON(auth_json[1])
+        if not evt.is_valid():
+            raise NostrNoticeException('Authentication failed: auth event signature validation failed')
+
+        # for now we're only checking the challenge tag, probably we should check the relay also
+        # though I don't think it helps any auth who shouldnt be able to
+        challenge = evt.tags.get_tags_value('challenge')
+        if not challenge or challenge[0] != ws.challenge:
+            raise NostrNoticeException('Authentication failed: bad challenge response')
+
+        else:
+            ws.authenticated_pub_ks.add(evt.pub_key)
+            logging.info(f'Relay::_do_auth pubkey {evt.pub_key} has authenticated')
+
     async def _do_send(self, ws: http_websocket, data):
         try:
             await ws.send_str(json.dumps(data))
         except Exception as e:
-            logging.info('Relay::_do_send error: %s' % e)
+            logging.info(f'Relay::_do_send error: {e}')
 
     async def _send_event(self, ws: http_websocket, sub_id, evt):
         await self._do_send(ws=ws,
@@ -474,6 +510,23 @@ class Relay:
         await self._do_send(ws=ws,
                             data=[
                                 'EOSE', sub_id
+                            ])
+
+    async def _send_auth(self, ws: http_websocket):
+        """
+        NIP42 sends a challenge for client to sign in order to auth a pub_k to this websocket
+        that pk:ws currently this is only checked in _do_event by accept requesters that is on
+        event publish, we could also check on clients making subs.
+        when/if we recieve auth back from the client authenticated_pub_k is added as param to ws
+        https://github.com/nostr-protocol/nips/blob/master/42.md
+        """
+        challenge = util_funcs.get_rnd_hex_str(32)
+        ws.challenge = challenge
+        ws.authenticated_pub_ks = set()
+
+        await self._do_send(ws=ws,
+                            data=[
+                                'AUTH', challenge
                             ])
 
     def _NIP11_relay_info_route(self):
