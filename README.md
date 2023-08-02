@@ -12,22 +12,23 @@ Monstr: Python Nostr module. Python code for working with nostr.
 ```sh
 $ git clone https://github.com/monty888/monstr.git
 $ cd monstr
-$ # may need to install postgres - FIXME - add import [postgres] as optional as mainly we don't use
-$ # and correct code not to fail if psycog2 lib isn't available
-$ # on linux
-$ sudo apt install postgresql automake pkg-config libtool
-$ # for mac? brew install postgresql automake pkg-config libtool libffi
 $ python3 -m venv venv
 $ source venv/bin/activate
-$ # Updated pip version for most up-to-date package discovery
-$ python3 -m pip install --upgrade pip
-$ # install wheel helper, if needed.
-$ pip install wheel
-$ # pip install '.' points to the setup.py
-$ # and installs the package with its requirements.
-$ pip install -r requirements.txt or pip install '.'
+$ pip install -r requirements.txt # or pip install .
 $ # probably required to run examples else nostr module won't be found
 $ export PYTHONPATH="$PYTHONPATH:./"
+```
+to use postgres as store psycopg2 must be installed, if you did pip install .
+it's probably already install
+```sh
+$ # install wheel helper, if needed.
+$ pip pip install wheel
+$ # maybe required on linux
+$ # sudo apt install postgresql automake pkg-config libtool
+$ # maybe required on mac
+$ # brew install postgresql automake pkg-config libtool libffi
+$ # now actually install psycopg2
+$ pip install psycopg2
 ```
 
 # test `monstr` package import
@@ -42,7 +43,7 @@ True
 >>
 ```
 
-Note: developed against python 3.8
+Note: developed against python 3.10.6
 
 # use 
 

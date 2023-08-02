@@ -196,8 +196,8 @@ if __name__ == "__main__":
     import_relay = 'wss://nos.lol'
     util_funcs.create_sqlite_store(DB)
 
-    # asyncio.run(run(import_relay=import_relay,
-    #                 import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
-    #                 import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
-    asyncio.run(relay_basic())
+    asyncio.run(run(import_relay=import_relay,
+                    import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
+                    import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
+    # asyncio.run(relay_basic())
     # asyncio.run(post_basic())
