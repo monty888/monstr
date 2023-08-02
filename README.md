@@ -18,8 +18,7 @@ $ pip install -r requirements.txt # or pip install .
 $ # probably required to run examples else nostr module won't be found
 $ export PYTHONPATH="$PYTHONPATH:./"
 ```
-to use postgres as store psycopg2 must be installed, if you did pip install .
-it's probably already install
+to use postgres as store psycopg2 must be installed
 ```sh
 $ # install wheel helper, if needed.
 $ pip pip install wheel
