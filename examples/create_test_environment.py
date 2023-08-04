@@ -191,7 +191,7 @@ async def post_basic():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger().setLevel(logging.DEBUG)
     # import_relay = 'wss://nostr-pub.wellorder.net'
     import_relay = 'wss://nos.lol'
     util_funcs.create_sqlite_store(DB)

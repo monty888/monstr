@@ -15,16 +15,6 @@ from datetime import datetime, timedelta
 from monstr.util import util_funcs
 from monstr.event.event import Event
 from monstr.encrypt import Keys
-from enum import Enum
-
-
-class RunState(Enum):
-    init = -1
-    running = 0
-    starting = 1
-    stopping = 2
-    stopped = 3
-    failed = 4
 
 
 class QueryTimeoutException(Exception):
@@ -100,7 +90,8 @@ class Client:
         # queue for postings, events and sub requests are put on here before being sent
         self._publish_q: asyncio.Queue = asyncio.Queue()
 
-        self._run = True
+        # set True once run() method is called
+        self._run = False
 
         # default times TODO: check what happens if None... assume in most cases this would be indefinate?
         # used for open_timeout/close_timeout of websockets.connect
@@ -121,6 +112,7 @@ class Client:
         self._eose_timeout = eose_timeout
 
     async def run(self):
+        self._run = True
         reconnect_delay = 1
         while self._run:
             try:
@@ -343,6 +335,10 @@ class Client:
 
     def end(self):
         self._run = False
+
+    @property
+    def running(self) -> bool:
+        return self._run
 
     def publish(self, evt: Event):
         if self._write:
@@ -646,8 +642,8 @@ class ClientPool:
         self._on_notice = on_notice
         self._on_auth = on_auth
 
-        # our current run state
-        self._state = RunState.init
+        # set true once run gets called
+        self._run = False
 
         # merge of status from pool, for example a single client connected means we consider connected to be True
         # last con will be newest of any relay we have etc....
@@ -734,18 +730,14 @@ class ClientPool:
                                 ssl=ssl)
 
         if the_client.url in self._clients:
-            raise Exception('ClientPool::add - %s attempted to add Client that already exists' % the_client.url)
-
-        # error if trying to add when we're stopped or stopping
-        if self._state in (RunState.stopping, RunState.stopped):
-            raise Exception('ClientPool::add - can\'t add new client to pool that is stopped or stoping url - %s' % the_client.url)
+            raise Exception(f'ClientPool::add - {the_client.url} attempted to add Client that already exists')
 
         # TODO: here we should go through handlers and add any subscriptions if they have be added via subscribe
         #  method. Need to change the subscrbe to keep a copy of the filter.. NOTE that normally it's better
         #  to do subscriptions in the on connect method anyhow when using a pool
 
-        # we're started so start the new client
-        if auto_start is True and self._state in (RunState.starting, RunState.running):
+        # we're started so start the new client, only happens if the pool is running
+        if auto_start is True and self._run:
             # starts it if not already running, if it's started and we're not should we do anything?
             run_task = asyncio.create_task(the_client.run())
 
@@ -877,30 +869,27 @@ class ClientPool:
 
     # methods work on all but we'll probably want to be able to name on calls
     async def run(self):
-        if self._state != RunState.init:
-            raise Exception('ClientPool::start - unexpected state, got %s expected %s' % (self._state,
-                                                                                          RunState.init))
+        if self._run:
+            raise Exception('ClientPool::run - already running!')
 
-        self._state = RunState.starting
-        # do starting of the clients
+        self._run = True
+
+        # start async task for each client
         for url in self._clients:
             client_info = self._clients[url]
             if client_info['task'] is None:
                 client_info['task'] = asyncio.create_task(client_info['client'].run())
                 # await client_info['client'].wait_connect()
 
-        self._state = RunState.running
-        # now just hang around until state is changed to stopping
-        while self._state not in (RunState.stopping, RunState.stopped):
+
+        # wait forever
+        while self._run:
             await asyncio.sleep(0.1)
 
-        self._state = RunState.stopped
-
     def end(self):
-        self._state = RunState.stopping
         for c_client in self:
             c_client.end()
-        self._state = RunState.stopped
+        self._run = False
 
     def subscribe(self, sub_id=None, handlers=None, filters={}):
         c_client: Client
@@ -1033,6 +1022,10 @@ class ClientPool:
     @property
     def clients(self) -> [Client]:
         return [self._clients[url]['client'] for url in self._clients]
+
+    @property
+    def running(self) -> bool:
+        return self._run
 
     def __repr__(self):
         return self._clients
