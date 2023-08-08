@@ -8,6 +8,10 @@ from __future__ import annotations
 from typing import Callable
 import logging
 import aiohttp
+try:
+    from aiohttp_socks import SocksConnector
+except:
+    pass
 import asyncio
 import json
 from json import JSONDecodeError
@@ -118,7 +122,7 @@ class Client:
             try:
                 if self._relay_info is None:
                     await self.get_relay_information()
-                async with aiohttp.ClientSession() as my_session:
+                async with aiohttp.ClientSession(connector=self._get_tor_connector(self.url)) as my_session:
                     async with my_session.ws_connect(self._url,
                                                      timeout=self._timeout,
                                                      heartbeat=self._ping_timeout,
@@ -447,7 +451,9 @@ class Client:
         # if same id already exists its just overidden
         self._subs[sub_id] = {
             'handlers': handlers,
-            # a sub can have it's own eose, if it does it'll be called in place of the client level eose
+            # confusingly this is false whilst we're doing the eose and is set true once its done
+            # anyway, if no eose func or self._on_eose then it'll be set True straight away
+            # and we go straight to events coming in as received
             'is_eose': eose_func is None and self._on_eose is None,
             'eose_func': eose_func,
             'events': [],
@@ -462,24 +468,12 @@ class Client:
             if self.have_sub(sub_id) and self._subs[sub_id]['is_eose'] is False:
                 self._do_eose(sub_id)
 
-        if self._eose_timeout:
+        # start eose timeout if needed, it'll force eose if we didn't see EOSE from relay
+        if self._eose_timeout and self._subs[sub_id] is False:
             asyncio.create_task(eose_timeout())
 
 
         return sub_id
-
-    # async def eose_emulate(self, sub_id):
-    #     wait = True
-    #     sub_info = self._subs[sub_id]
-    #     while wait:
-    #         await asyncio.sleep(1)
-    #         now = datetime.now()
-    #         if (sub_info['last_event'] is not None and now - sub_info['last_event'] > timedelta(seconds=2)) or \
-    #                 (now - sub_info['start_time'] > timedelta(seconds=2)):
-    #             wait = False
-    #
-    #     # it's been some time since we saw a new event so fire the EOSE event
-    #     self._on_message(['EOSE', sub_id])
 
     def unsubscribe(self, sub_id):
         if not self.have_sub(sub_id):
@@ -527,11 +521,28 @@ class Client:
             'last_err': self.last_err
         }
 
+    def _get_tor_connector(self, url) -> 'SocksConnector':
+        """
+        if tor onion then we need to use a connector, for now we just hope that tor service proxy
+        is running at default location
+        raise err requesting pip install aiohttp_socks
+        """
+        ret = None
+        if url.lower().replace('/', '').endswith('.onion'):
+            try:
+                ret = SocksConnector.from_url('socks5://localhost:9050', rdns=True)
+            except NameError as e:
+                raise ModuleNotFoundError(
+                    f'requested connection to onion {url} but can\'t create SocksConnector - try pip install aiohttp_socks')
+
+        return ret
+
     async def get_relay_information(self):
+        info_url = self._url.replace('ws:', 'http:').replace('wss:', 'https:')
+
         async with aiohttp.ClientSession(headers={
             'Accept': 'application/nostr+json'
-        }) as session:
-            info_url = self._url.replace('ws:', 'http:').replace('wss:', 'https:')
+        }, connector=self._get_tor_connector(info_url)) as session:
             try:
                 async with session.get(info_url, ssl=self._ssl) as response:
                     if response.status == 200:

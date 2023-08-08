@@ -114,6 +114,7 @@ async def do_query(args):
 
     async with ClientPool(args.relay.split(','),
                           query_timeout=args.timeout,
+                          timeout=args.timeout,
                           ssl=ssl) as c:
 
         events = await c.query(my_query,

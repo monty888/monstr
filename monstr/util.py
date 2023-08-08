@@ -158,6 +158,21 @@ class util_funcs:
         ret = md5(ret.encode('utf8')).hexdigest()[:length]
         return ret
 
+    @staticmethod
+    def is_hex_part(hex: str, max_length: int = 64):
+        """
+            returns true if hex is only hex chars and is <= max_length
+        """
+        ret = False
+        if len(hex) <= max_length:
+            # and also hex, will throw otherwise
+            try:
+                bytearray.fromhex(hex)
+                ret = True
+            except:
+                pass
+        return ret
+
 
 class NIPSupport:
     """
