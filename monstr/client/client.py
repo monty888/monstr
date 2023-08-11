@@ -294,7 +294,7 @@ class Client:
             # self.unsubscribe(sub_id)
         else:
             the_sub = self._subs[sub_id]
-            if the_sub['is_eose'] is True:
+            if the_sub['is_eose'] is True and (self._on_eose or the_sub['is_func']):
                 logging.debug(f'end of stored events for {sub_id} - already seen, maybe it was force timedout?')
             else:
                 # call the EOSE func if any
@@ -603,7 +603,14 @@ class Client:
 
     async def __aenter__(self):
         asyncio.create_task(self.run())
-        await self.wait_connect(timeout=self._timeout)
+        try:
+            await self.wait_connect(timeout=self._timeout)
+        except Exception as e:
+            # never got running! we need to call end else it'll linger in the background
+            # as a zombie forever trying to connect as __aexit__ won't get called
+            # because of the exception
+            self.end()
+            raise e
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
