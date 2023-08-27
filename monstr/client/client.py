@@ -294,7 +294,7 @@ class Client:
             # self.unsubscribe(sub_id)
         else:
             the_sub = self._subs[sub_id]
-            if the_sub['is_eose'] is True and (self._on_eose or the_sub['is_func']):
+            if the_sub['is_eose'] is True and (self._on_eose or the_sub['eose_func']):
                 logging.debug(f'end of stored events for {sub_id} - already seen, maybe it was force timedout?')
             else:
                 # call the EOSE func if any
