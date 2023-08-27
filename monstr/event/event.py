@@ -271,7 +271,8 @@ class Event:
         elif isinstance(self._created_at, datetime):
             self._created_at = util_funcs.date_as_ticks(self._created_at)
 
-        self._content = content
+        # content forced to str
+        self._content = str(content)
 
         self._pub_key = pub_key
 
@@ -507,11 +508,11 @@ class Event:
         return self._created_at
 
     @property
-    def kind(self):
+    def kind(self) -> int:
         return self._kind
 
     @property
-    def content(self):
+    def content(self) -> str:
         return self._content
 
     def decrypted_content(self, priv_key, pub_key, check_kind=True):

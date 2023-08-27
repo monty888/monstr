@@ -224,16 +224,16 @@ class Profile:
         return self._pub_k
 
     @property
-    def attrs(self):
+    def attrs(self) -> dict:
         return self._attrs
 
     @attrs.setter
-    def attrs(self, attrs) -> dict:
+    def attrs(self, attrs: dict):
         self._attrs = attrs
 
-    def get_attr(self, name):
+    def get_attr(self, name, default=None):
         # returns vale for named atr, None if it isn't defined
-        ret = None
+        ret = default
         if name in self._attrs:
             ret = self._attrs[name]
         return ret
@@ -255,7 +255,7 @@ class Profile:
         """
         return Event(kind=Event.KIND_META,
                      # possible only output a sub section of the attrs?
-                     content=json.dumps(self.attrs, separators=[',', ':']),
+                     content=json.dumps(self.attrs, separators=(',', ':')),
                      pub_key=self.public_key)
 
     def __str__(self):
