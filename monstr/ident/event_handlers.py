@@ -1,7 +1,10 @@
 from __future__ import annotations
+
+import sys
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from monstr.client.client import Client
+
 from datetime import datetime
 import logging
 from cachetools import TTLCache, LRUCache
@@ -27,7 +30,15 @@ class ProfileEventHandlerInterface(ABC):
         pass
 
     @abstractmethod
+    async def aget_profile(self, pub_k: str, create_missing=False) -> Profile:
+        pass
+
+    @abstractmethod
     def get_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
+        pass
+
+    @abstractmethod
+    def aget_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
         pass
 
     @staticmethod
@@ -78,7 +89,6 @@ class ProfileEventHandler(ProfileEventHandlerInterface):
         # unless maybe you want to control the fetches yourself
         if cache is None:
             cache = LRUCache(maxsize=10000)
-
         # a cache for quick access now
         self._cache = cache
         # this is storage e.g. db that we'd expect to persist across runs
@@ -93,11 +103,16 @@ class ProfileEventHandler(ProfileEventHandlerInterface):
         to_put = []
         # update metas
         for c_evt in meta_evts:
+
             p = Profile.from_event(c_evt)
             if p.public_key not in self._cache or \
                     (p.public_key in self._cache and
                      self._cache[p.public_key].update_at < p.update_at):
+
+
                 self._cache[p.public_key] = p
+
+
                 to_put.append(p)
                 logging.info('ProfileEventHandler::do_event cache updated profile pub_k - %s/%s' % (p.public_key,
                                                                                                     p.name))
@@ -229,7 +244,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         Event.latest_events_only(con_events, kind=Event.KIND_CONTACT_LIST)
         return [ContactList.from_event(evt) for evt in con_events]
 
-    async def get_profile(self, pub_k, create_missing=False):
+    async def aget_profile(self, pub_k, create_missing=False):
         ret = super().get_profile(pub_k,
                                   create_missing=False)
         # if we don't already have then we'll try and fetch from client
@@ -245,12 +260,12 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
 
         return ret
 
-    async def get_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
+    async def aget_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
         for_keys = self.get_hex_keys(pub_ks)
         ret = []
         if for_keys:
             # those we have
-            ret = [await self.get_profile(k) for k in for_keys if k in self]
+            ret = [self.get_profile(k) for k in for_keys if k in self]
 
             to_fetch = [k for k in for_keys if k not in self]
             to_fetch.sort()
@@ -270,13 +285,26 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                         self._cache[k] = n_p
         return ProfileList(ret)
 
-    async def load_contacts(self, p: Profile) -> ContactList:
-        p_contacts = await self._fetch_contacts(pub_ks=[p.public_key])
+    async def aload_contacts(self, p: str | Profile) -> ContactList:
+        if isinstance(p, Profile):
+            pub_key = p.public_key
+        else:
+            pub_key = p
+
+        # load the contacts
+        p_contacts = await self._fetch_contacts(pub_ks=[pub_key])
+
+        # we'll return a ContatcList no matter what, empty if we didn't get anything
+        ret = p_contacts
         if p_contacts:
-            p.contacts = p_contacts[0]
+            ret = p_contacts[0]
         # couldn't find any?
         else:
-            p.contacts = ContactList(contacts=[],
-                                     owner_pub_k=p.public_key)
+            ret = ContactList(contacts=[],
+                              owner_pub_k=pub_key)
 
-        return p.contacts
+        # if called with profile then we'll set contacts on that profile
+        if isinstance(p, Profile):
+            p.contacts = ret
+
+        return p_contacts[0]
