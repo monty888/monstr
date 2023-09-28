@@ -41,6 +41,10 @@ class ProfileEventHandlerInterface(ABC):
     async def aget_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
         pass
 
+    @abstractmethod
+    async def aload_contacts(self, p: str | Profile) -> ContactList:
+        pass
+
     @staticmethod
     def get_hex_keys(pub_ks):
         """
