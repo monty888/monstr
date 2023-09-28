@@ -38,7 +38,7 @@ class ProfileEventHandlerInterface(ABC):
         pass
 
     @abstractmethod
-    def aget_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
+    async def aget_profiles(self, pub_ks: [str], create_missing=False) -> ProfileList:
         pass
 
     @staticmethod
