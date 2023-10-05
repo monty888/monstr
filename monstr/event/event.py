@@ -123,7 +123,10 @@ class Event:
     KIND_CHANNEL_HIDE = 43
     KIND_CHANNEL_MUTE = 44
 
-    # nip42 auth event
+    # nip 98 http auth header event https://github.com/nostr-protocol/nips/blob/master/98.md
+    KIND_HTTP_AUTH = 27235
+
+    # nip42 auth event https://github.com/nostr-protocol/nips/blob/master/42.md
     KIND_AUTH = 22242
 
     # a wrapped event to be republished see https://github.com/motorina0/nips/blob/republish_events/705.md
@@ -131,6 +134,10 @@ class Event:
 
     # a raw bitcoin transaction
     KIND_BTC_TX = 28333
+
+    # user status events https://github.com/nostr-protocol/nips/blob/master/38.md
+    KIND_USER_STATUS = 30315
+
 
     @staticmethod
     def from_JSON(evt_json):
