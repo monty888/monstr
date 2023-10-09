@@ -311,4 +311,4 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
         if isinstance(p, Profile):
             p.contacts = ret
 
-        return p_contacts[0]
+        return ret
