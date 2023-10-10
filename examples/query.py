@@ -118,39 +118,44 @@ async def do_query(args):
                           ssl=ssl) as c:
 
         events = await c.query(my_query,
-                               emulate_single=False)
+                               emulate_single=True,
+                               wait_connect=True)
+
         Event.sort(events, inplace=True, reverse=False)
 
         c_evt: Event
-        for c_evt in events:
-            if args.output == 'raw':
-                print(c_evt.event_data())
-            else:
-                if args.output in ('full', 'heads'):
-                    print(c_evt)
-                if args.output == 'full':
-                    # decrypt nip4, only from us currently. add to us and maybe add as simpler util method
-                    # on Event?
-                    if c_evt.kind == Event.KIND_ENCRYPT:
-                        # dm to us
-                        if c_evt.pub_key in key_map:
-                            k: Keys = key_map[c_evt.pub_key]
-                            if k.private_key_hex():
-                                to = None
-                                if c_evt.p_tags:
-                                    for c_tag in c_evt.p_tags:
-                                        to = c_tag
-                                        if to != c_evt.pub_key:
-                                            break
+        if not events:
+            print('no events!')
+        else:
+            for c_evt in events:
+                if args.output == 'raw':
+                    print(c_evt.event_data())
+                else:
+                    if args.output in ('full', 'heads'):
+                        print(c_evt)
+                    if args.output == 'full':
+                        # decrypt nip4, only from us currently. add to us and maybe add as simpler util method
+                        # on Event?
+                        if c_evt.kind == Event.KIND_ENCRYPT:
+                            # dm to us
+                            if key_map and c_evt.pub_key in key_map:
+                                k: Keys = key_map[c_evt.pub_key]
+                                if k.private_key_hex():
+                                    to = None
+                                    if c_evt.p_tags:
+                                        for c_tag in c_evt.p_tags:
+                                            to = c_tag
+                                            if to != c_evt.pub_key:
+                                                break
 
-                                if to:
-                                    c_evt.content = c_evt.decrypted_content(k.private_key_hex(), to)
+                                    if to:
+                                        c_evt.content = c_evt.decrypted_content(k.private_key_hex(), to)
 
+                        print(''.join(['-']*80))
+                        for c_str in util_funcs.chunk(c_evt.content, 80):
+                            print('> ' + c_str)
+                        print()
 
-                    print(''.join(['-']*80))
-                    for c_str in util_funcs.chunk(c_evt.content, 80):
-                        print('> ' + c_str)
-                    print()
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.ERROR)

@@ -370,7 +370,9 @@ class Client:
 
     async def query(self, filters: object = [],
                     do_event: object = None,
-                    timeout=None, **kargs) -> [Event]:
+                    timeout=None,
+                    wait_connect=False,
+                    **kargs) -> [Event]:
         """
         do simple one off queries to a given relay
         :param timeout:
@@ -381,6 +383,9 @@ class Client:
         """
         is_done = False
         ret = None
+        total_time = 0
+
+
         if timeout is None:
             timeout = self._query_timeout
 
@@ -390,7 +395,6 @@ class Client:
             ret = events
             if do_event is not None:
                 do_event(self, sub_id, events)
-                # Greenlet(util_funcs.get_background_task(do_event, the_client, sub_id, events)).start_later(0)
             is_done = True
 
         def cleanup():
@@ -398,20 +402,22 @@ class Client:
 
         # if not connected don't even bother trying to sub
         if not self.connected:
-            raise QueryLostConnectionException('Client::query - not connected to relay')
+            if wait_connect and 'fail_count' in self.status and self.status['fail_count'] > 0:
+                raise QueryLostConnectionException(f'Client::query - not connected to relay {self.url}')
+
+            # we'll give it 1s to connect...
+            await self.wait_connect(1)
+            total_time = 1
 
         sub_id = self.subscribe(filters=filters, eose_func=my_done)
 
         sleep_time = 0.1
-        total_time = 0
-        con_count = self._connected_count
-
         while is_done is False and self._run is True:
-            if con_count != self._connected_count:
-                raise QueryLostConnectionException('Client::query - lost connection during query')
+            if not self.connected:
+                raise QueryLostConnectionException(f'Client::query - lost connection during query {self.url}')
             if ret is None and timeout and total_time >= timeout:
                 cleanup()
-                raise QueryTimeoutException('Client::query timeout- %s' % self.url)
+                raise QueryTimeoutException(f'Client::query timeout- {self.url}')
 
             await asyncio.sleep(sleep_time)
             total_time += sleep_time
@@ -643,6 +649,8 @@ class ClientPool:
                  on_notice: Callable = None,
                  on_auth: Callable = None,
                  timeout: int = None,
+                 min_connect: int = 1,
+                 error_min_con_fail: bool=False,
                  **kargs
                  ):
 
@@ -689,10 +697,15 @@ class ClientPool:
             except Exception as e:
                 logging.debug('ClientPool::__init__ - %s' % e)
 
-        # this is the timeout used when using the with context manager, if
-        # no client has connected after timeout then we'll error
-        # if None we'll just wait forever until a client connects
+        # connection timeout values for wait_connect - these are always used if using context
+        # can be overridden using wait_connect manually
+
+        # max wait to estabish connection
         self._timeout = timeout
+        # min n of clients we consider connected
+        self._min_connect = min_connect
+        # raise an error if we didn't reach min n cons or accept anynumber after timeout
+        self._error_min_con_fail = error_min_con_fail
 
     def add(self, client, auto_start=False) -> Client:
         """
@@ -1007,13 +1020,58 @@ class ClientPool:
                 except Exception as e:
                     logging.debug(e)
 
-    async def wait_connect(self, timeout=None):
+    async def wait_connect(self, timeout: int=None, min_connect: int=None, error_min_con_fail: bool=None):
+        """
+            wait for the ClientPool to be considered connected
+            the default is no timeout and we're happy as long as a single relay connects...
+            probably you'd atleast want to set a timeout
+
+            TODO: allow wait options to be set in init to be used as defaults in init
+        """
+        # how long we'll wait to get connection
+        if timeout is None:
+            timeout = self._timeout
+
+        # are we connected, we'll exit when this is True, we're connected if connect_count >= min_connect
+        # if we timeout and error_if_min is False and we have any connection we'll also count that as connected
+        connected = False
+
+        # if min_connect is 0 then we'll set it to all count of all clients
+        n_clients = len(self.clients)+1
+        if min_connect is None:
+            min_connect = self._min_connect
+        if min_connect == 0 or min_connect > n_clients:
+            min_connect = n_clients
+
+        if error_min_con_fail is None:
+            error_min_con_fail = self._error_min_con_fail
+
+        # number of connections we currently have
+        connect_count = 0
+
+        # how long we've been waiting
         wait_time = 0
-        while not self.connected:
+
+        while not connected:
+            # get n relays curretly connected
+            if 'connect_count' in self.status:
+                connect_count = self.status['connected_count']
+
+            if connect_count >= min_connect:
+                connected = True
+                continue
+
             await asyncio.sleep(0.1)
             wait_time += 0.1
+
+            # reached timeout...
             if timeout and int(wait_time) >= timeout:
-                raise ConnectionError('ClientPool::wait_connect timed out waiting for connection after %ss' % timeout)
+                # we have some connections and error_if_min is False so we're happy to go
+                if connect_count and error_min_con_fail is False:
+                    connected = True
+                # we wanted all connections so we'll raise an error
+                else:
+                    raise ConnectionError(f'ClientPool::wait_connect timed out waiting for connection after {timeout}s')
 
     def do_event(self, client: Client, sub_id: str, evt):
 
@@ -1062,7 +1120,7 @@ class ClientPool:
         for url in self._clients:
             yield self._clients[url]['client']
 
-    async def __aenter__(self):
+    async def __aenter__(self, test=None):
         asyncio.create_task(self.run())
         await self.wait_connect(self._timeout)
         return self
