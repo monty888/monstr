@@ -6,7 +6,7 @@ from pathlib import Path
 from monstr.util import util_funcs
 from monstr.client.client import Client, ClientPool
 from monstr.event.event import Event
-from monstr.exception import ConfigurationError
+from monstr.util import ConfigError
 from monstr.encrypt import Keys
 from monstr.ident.alias import ProfileFileAlias
 
@@ -31,7 +31,7 @@ def parse_filter(parse_args):
             try:
                 q_kinds.append(int(c_kind))
             except ValueError as ve:
-                raise ConfigurationError('kinds values must be integer, found %s' % c_kind)
+                raise ConfigError('kinds values must be integer, found %s' % c_kind)
                 sys.exit(2)
         parse_args.kinds = q_kinds
 
@@ -52,7 +52,7 @@ def parse_filter(parse_args):
                 if p:
                     author_keys.append(p.keys)
                 else:
-                    raise ConfigurationError('unable to create author keys from key value - %s' % c_key)
+                    raise ConfigError('unable to create author keys from key value - %s' % c_key)
         parse_args.authors = author_keys
 
 def get_args():
@@ -86,7 +86,7 @@ def get_args():
 
     try:
         parse_filter(ret)
-    except ConfigurationError as ce:
+    except ConfigError as ce:
         print(ce)
         sys.exit()
 
