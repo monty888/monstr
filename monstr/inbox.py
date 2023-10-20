@@ -111,7 +111,7 @@ class Inbox:
         shared = evt.get_tag_value_pos('shared')
 
         # its a shared its encrypted for a specific user is that us
-        if shared:
+        if shared and keys:
             # if us we'll try and unwrap, otherwise we'll just ret None - not for us?...
             share_map = {}
 
