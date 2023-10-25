@@ -92,7 +92,7 @@ class Inbox:
             shared_key = self.generate_share_key(from_k, to_k)
             tags.append(['shared', shared_key])
 
-        evt = Event(kind=Event.KIND_ENCRYPT,
+        evt = Event(kind=self.kind,
                     content=json.dumps(evt.event_data()),
                     pub_key=self.view_key,
                     tags=tags)
