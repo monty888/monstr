@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from monstr.util import util_funcs
 from monstr.event.event import Event
 from monstr.encrypt import Keys
+from monstr.signing import SignerInterface
 
 
 class QueryTimeoutException(Exception):
@@ -353,14 +354,15 @@ class Client:
                 ])
             )
 
-    def auth(self, with_keys:Keys, challenge: str):
+    async def auth(self, signer: SignerInterface, challenge: str):
         auth_event = Event(kind=Event.KIND_AUTH,
                            tags=[
                                ['relay', self.url],
                                ['challenge', challenge]
                            ],
-                           pub_key=with_keys.public_key_hex())
-        auth_event.sign(with_keys.private_key_hex())
+                           pub_key=await signer.get_public_key())
+
+        await signer.sign_event(auth_event)
 
         self._publish_q.put_nowait(
             json.dumps([

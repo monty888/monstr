@@ -195,6 +195,7 @@ class Keys:
                              self.public_key_bech32()))
         return '\n'.join(ret)
 
+
 class SharedEncrypt:
 
     def __init__(self, priv_k_hex):
@@ -211,7 +212,7 @@ class SharedEncrypt:
         # our public key for priv key
         self._pub_key = self._key.public_key()
         # shared key for priv/pub ECDH
-        self._shared_key = None
+        self._shared_keys = {}
 
     @property
     def public_key_hex(self):
@@ -222,55 +223,44 @@ class SharedEncrypt:
         return self._pub_key.public_bytes(encoding=serialization.Encoding.X962,
                                           format=serialization.PublicFormat.CompressedPoint)
 
-    def derive_shared_key(self, pub_key_hex, as_type=KeyEnc.HEX):
-        pk = secp256k1.PublicKey()
-        if len(pub_key_hex) == 64:
-            pub_key_hex = '02' + pub_key_hex
+    def _get_derived_shared_key(self, to_pub_k: str):
+        # first time we need to derive the shared key for us and the pub_k
+        if to_pub_k not in self._shared_keys:
+            pk = secp256k1.PublicKey()
+            pk.deserialize(bytes.fromhex('02'+to_pub_k))
+            ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
+            shared_key = self._key.exchange(ec.ECDH(), ec_key)
+            self._shared_keys[to_pub_k] = {
+                KeyEnc.BYTES: shared_key,
+                KeyEnc.HEX: shared_key.hex()
+            }
 
-        pk.deserialize(bytes.fromhex(pub_key_hex))
-        pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
-        self._shared_key = self._key.exchange(ec.ECDH(), pub_key)
+    def get_echd_key_hex(self, to_pub_k: str) -> str:
+        self._get_derived_shared_key(to_pub_k=to_pub_k)
+        return self._shared_keys[to_pub_k][KeyEnc.HEX]
 
-        # added return so we don't have to do as 2 step all the time
-        return self.shared_key(as_type)
-
-    def shared_key(self, as_type=KeyEnc.HEX):
-        if self._shared_key is None:
-            raise Exception('SharedEncrypt::shared_key hasn\'t been derived yet')
-
-        ret = self._shared_key
-        if as_type == KeyEnc.HEX:
-            ret = self._shared_key.hex()
-
-        return ret
-
-    def encrypt_message(self, data, pub_key_hex=None):
-        if pub_key_hex is not None:
-            self.derive_shared_key(pub_key_hex)
-
-        key = secp256k1.PrivateKey().deserialize(self.shared_key(as_type=KeyEnc.HEX))
+    def encrypt_message(self, data, to_pub_k: str):
+        share_key = self.get_echd_key_hex(to_pub_k)
+        key = secp256k1.PrivateKey().deserialize(share_key)
         # iv = get_random_bytes(16)
         iv = os.urandom(16)
         # data = Padding.pad(data, 16)
         padder = padding.PKCS7(128).padder()
         data = padder.update(data)
         data += padder.finalize()
-
         # cipher = AES.new(key, AES.MODE_CBC, iv)
         ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
         encryptor = ciper.encryptor()
-
         return {
             'text': encryptor.update(data) + encryptor.finalize(),
             'iv': iv,
-            'shared_key': self._shared_key
+            'shared_key': share_key
         }
 
-    def decrypt_message(self, encrypted_data,iv, pub_key_hex=None):
-        if pub_key_hex is not None:
-            self.derive_shared_key(pub_key_hex)
+    def decrypt_message(self, encrypted_data, iv, to_pub_k: str):
+        share_key = self.get_echd_key_hex(to_pub_k=to_pub_k)
 
-        key = secp256k1.PrivateKey().deserialize(self.shared_key(as_type=KeyEnc.HEX))
+        key = secp256k1.PrivateKey().deserialize(share_key)
         ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
         decryptor = ciper.decryptor()
 

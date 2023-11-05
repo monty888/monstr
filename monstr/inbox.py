@@ -1,7 +1,9 @@
 import hashlib
 import json
 from monstr.encrypt import SharedEncrypt, Keys
+from monstr.signing import SignerInterface
 from monstr.event.event import Event
+from monstr.util import util_funcs
 
 
 class Inbox:
@@ -18,25 +20,21 @@ class Inbox:
     """
 
     @staticmethod
-    def generate_share_key(for_keys: Keys, to_keys: Keys | str) -> str:
-        # generate the share key, this will be added to decrypted messages and can only
-        # be derived between from_user and to_user
-        # TODO: maybe we should add an inbox component so that it will be different on each inbox?
-        se = SharedEncrypt(priv_k_hex=for_keys.private_key_hex())
-
-        if isinstance(to_keys, Keys):
-            to_keys = to_keys.public_key_hex()
-
-        echd_key = se.derive_shared_key(pub_key_hex=to_keys)
+    async def generate_share_key(for_sign: SignerInterface, to_pub_k: str) -> str:
+        # TODO: the shared key is sha256(echd_key) of for_sign to to_key
+        #  this is the same as the how clust did it - maybe though we should add
+        #  in something from the inbox so that the share key for 2 people will be
+        #  different per inbox?
+        echd_key = await for_sign.echd_key(to_pub_k)
         return hashlib.sha256(echd_key.encode()).hexdigest()
 
     def __init__(self,
-                 keys: Keys,
+                 signer: SignerInterface,
                  name: str=None,
                  use_kind=Event.KIND_ENCRYPT):
 
         # key pair for the inbox
-        self._keys = keys
+        self._signer = signer
 
         # a printable name for us, if not given just the hex pubkey
         self._name = name
@@ -49,87 +47,92 @@ class Inbox:
         # decrypted
         self._share_maps = {}
 
-    def set_share_map(self, for_keys: Keys, to_keys: [Keys | str]):
+    async def set_share_map(self, for_sign: SignerInterface, to_keys: [Keys | str]):
         n_map = {}
         for k in to_keys:
             if isinstance(k, Keys):
                 k = k.public_key_hex()
-            n_map[Inbox.generate_share_key(for_keys=for_keys,
-                                           to_keys=k)] = k
-
-        self._share_maps[for_keys.public_key_hex()] = n_map
+            n_map[await Inbox.generate_share_key(for_sign=for_sign,
+                                                 to_pub_k=k)] = k
+        self._share_maps[await for_sign.get_public_key()] = n_map
 
     @property
-    def name(self) -> str:
-        ret = self._keys.public_key_hex()
+    async def name(self) -> str:
         if self._name:
             ret = self._name
+        # default name is trim of pub k if not given
+        else:
+            ret = self._name = util_funcs.str_tails(await self._signer.get_public_key())
+
         return ret
 
     @property
-    def view_key(self) -> str:
-        return self._keys.public_key_hex()
-
-    @property
-    def decrypt_key(self) -> str:
-        return self._keys.private_key_hex()
+    async def pub_key(self) -> str:
+        return await self._signer.get_public_key()
 
     @property
     def kind(self) -> int:
         return self._kind
 
-    def wrap_event(self, evt, from_k: Keys = None, to_k: Keys | str = None):
+    async def wrap_event(self, evt, from_sign: SignerInterface = None, to_k: Keys | str = None) -> Event:
         tags = []
         if to_k and isinstance(to_k, Keys):
             to_k = to_k.public_key_hex()
-
 
         # if supplied the we're going to encrypt, we'll generate a share key that should only possible
         # for from_k and to_k to derive
         # this key is how we know a mesage is for/from us in future
         shared_key = None
-        if from_k and to_k:
-            shared_key = self.generate_share_key(from_k, to_k)
+        if from_sign and to_k:
+            shared_key = await self.generate_share_key(for_sign=from_sign,
+                                                       to_pub_k=to_k)
             tags.append(['shared', shared_key])
 
         evt = Event(kind=self.kind,
                     content=json.dumps(evt.event_data()),
-                    pub_key=self.view_key,
+                    pub_key=await self.pub_key,
                     tags=tags)
 
         if shared_key:
-            evt.content = evt.encrypt_content(from_k.private_key_hex(), to_k)
+            evt.content = await from_sign.encrypt_text(plain_text=evt.content,
+                                                       to_pub_k=to_k)
+            # evt = await from_sign.encrypt_event(evt, to_pub_k=to_k)
         else:
-            evt.content = evt.encrypt_content(self.decrypt_key, self.view_key)
+            evt.content = await self._signer.encrypt_text(plain_text=evt.content,
+                                                          to_pub_k=await self.pub_key)
 
-        evt.sign(self.decrypt_key)
+        await self._signer.sign_event(evt)
 
         return evt
 
-    def unwrap_event(self, evt: Event, keys: Keys=None):
+    async def unwrap_event(self, evt: Event, user_sign: SignerInterface):
         ret = None
         shared = evt.get_tag_value_pos('shared')
 
         # its a shared its encrypted for a specific user is that us
-        if shared and keys:
+        if shared and user_sign:
+            print('have share...')
+            user_pub_k = await user_sign.get_public_key()
+
             # if us we'll try and unwrap, otherwise we'll just ret None - not for us?...
             share_map = {}
 
-            if keys.public_key_hex() in self._share_maps:
-                share_map = self._share_maps[keys.public_key_hex()]
-
+            if user_pub_k in self._share_maps:
+                share_map = self._share_maps[user_pub_k]
+            print(shared, share_map)
             if shared in share_map:
                 try:
-                    content = evt.decrypted_content(priv_key=keys.private_key_hex(),
-                                                    pub_key=share_map[shared],
-                                                    check_kind=False)
+                    content = await user_sign.decrypt_text(encrypt_text=evt.content,
+                                                           for_pub_k=share_map[shared])
+
                     ret = Event.from_JSON(json.loads(content))
                 except Exception as e:
                     pass
         # we'll just treat it as standard
         else:
             try:
-                content = evt.decrypted_content(self.decrypt_key, self.view_key, check_kind=False)
+                content = await self._signer.decrypt_text(encrypt_text=evt.content,
+                                                          for_pub_k=await self.pub_key)
                 ret = Event.from_JSON(json.loads(content))
             except Exception as e:
                 pass
