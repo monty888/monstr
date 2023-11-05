@@ -111,7 +111,6 @@ class Inbox:
 
         # its a shared its encrypted for a specific user is that us
         if shared and user_sign:
-            print('have share...')
             user_pub_k = await user_sign.get_public_key()
 
             # if us we'll try and unwrap, otherwise we'll just ret None - not for us?...
@@ -119,7 +118,6 @@ class Inbox:
 
             if user_pub_k in self._share_maps:
                 share_map = self._share_maps[user_pub_k]
-            print(shared, share_map)
             if shared in share_map:
                 try:
                     content = await user_sign.decrypt_text(encrypt_text=evt.content,
