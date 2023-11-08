@@ -14,7 +14,11 @@ class SignerInterface:
         if pub_k == self.get_public_key():
             pub_k = evt.p_tags[0]
 
-        return self.decrypt_event(evt, for_pub_k=pub_k)
+        ret = Event.from_JSON(evt.event_data())
+        ret.content = self.decrypt_text(encrypt_text=evt.content,
+                                        for_pub_k=pub_k)
+
+        return ret
 
     @abstractmethod
     async def get_public_key(self) -> str:
@@ -60,7 +64,7 @@ class BasicKeySigner(SignerInterface):
                                                         to_pub_k=to_pub_k)
         enc_message = base64.b64encode(crypt_message['text'])
         iv_env = base64.b64encode(crypt_message['iv'])
-        return f'{enc_message.decode()}%s?iv={iv_env.decode()}'
+        return f'{enc_message.decode()}?iv={iv_env.decode()}'
 
     async def decrypt_text(self, encrypt_text, for_pub_k: str) -> str:
         msg_split = encrypt_text.split('?iv')
