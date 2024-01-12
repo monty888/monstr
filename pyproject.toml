@@ -1,0 +1,232 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "monstr"
+dynamic = ["version"]
+description = "Monstr: Python Nostr module. Python code for working with nostr."
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Monty888", email = "Monty888@protonmail.com" },
+]
+dependencies = [
+    "aioconsole>=0.6.0",
+    "aiohttp>=3.8.4",
+    "aiosqlite>=0.18.0",
+    "bech32>=1.2.0",
+    "cachetools>=5.3.0",
+    "cryptography>=39.0.1",
+    "secp256k1>=0.14.0",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "clean","dist",".venv",
+]
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/monstr",
+]
+
+[project.optional-dependencies]
+
+[project.scripts]
+
+
+[project.urls]
+Documentation = "https://github.com/monty888/monstr/blob/master/README.md"
+Issues = "https://github.com/monty888/monstr/issues"
+Source = "https://github.com/monty888/monstr"
+
+[tool.semantic_release]
+branch = "main"
+version_variable = "src/monstr/__about__.py:__version__"
+change_log = "CHANGELOG.md"
+upload_to_repository = false
+upload_to_release = false
+build_command = "hatch build"
+
+[tool.hatch.version]
+path = "src/monstr/__about__.py"
+
+[tool.hatch.envs.semver]
+dependencies = [
+    "python-semantic-release",
+]
+[tool.hatch.envs.semver.scripts]
+semver = "semantic-release"
+
+[tool.hatch.envs.default]
+dependencies = [
+    "coverage[toml]>=6.5",
+    "pytest",
+    # 'python-semantic-release >= 8.0.0a5'
+]
+[tool.hatch.envs.default.scripts]
+# semver
+test-semver = [
+    'python --version',
+    'semantic-release --version',
+]
+
+# note: don't run `hatch run publish` right now,
+# because semantic release v7 (stable) is not compatible with invoke 2 (which is required for python3.11+)
+# and semantic release v8 (alpha) is not compatible with the tool.semantic_release config in this file!
+publish = [
+    'semantic-release publish',
+    'hatch build -c',
+    'hatch publish',
+]
+# pytest/cov
+test = "pytest {args:tests}"
+test-cov = "coverage run -m pytest {args:tests}"
+cov-report = [
+    "- coverage combine",
+    "coverage report",
+]
+cov = [
+    "test-cov",
+    "cov-report",
+]
+
+[[tool.hatch.envs.all.matrix]]
+python = ["3.10", "3.11", "3.12"]
+
+[tool.hatch.envs.lint]
+detached = true
+dependencies = [
+    "black>=23.1.0",
+    "mypy>=1.0.0",
+    "ruff>=0.0.243",
+]
+[tool.hatch.envs.lint.scripts]
+typing = "mypy --install-types --non-interactive {args:mostr tests}"
+style = [
+    "ruff {args:.}",
+    "black --check --diff {args:.}",
+]
+fmt = [
+    "black {args:.}",
+    "ruff --fix {args:.}",
+    "style",
+]
+all = [
+    "style",
+    "typing",
+]
+
+[tool.black]
+target-version = ["py310"]
+line-length = 120
+skip-string-normalization = false
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+#select = [
+#  "A",
+#  "ARG",
+#  "B",
+#  "C",
+#  "DTZ",
+#  "E",
+#  "EM",
+#  "F",
+#  "FBT",
+#  "I",
+#  "ICN",
+#  "ISC",
+#  "N",
+#  "PLC",
+#  "PLE",
+#  "PLR",
+#  "PLW",
+#  "Q",
+#  "RUF",
+#  "S",
+#  "T",
+#  "TID",
+#  "UP",
+#  "W",
+#  "YTT",
+#]
+
+select = [
+    "F", # pyflake error
+    "E", # pycodestyle error
+    "W", # pycodestyle warning
+    "Q", # quotes
+    "A", # builtins
+    # "C4", # comprehensions
+    # "RET", # return
+    "SIM", # simplify
+    "ARG", # unused arguments
+    # "COM", # comma's
+    # "PTH", # use pathlib
+    "RUF", # ruff rules
+    "C90", # mccabe (complexity)
+    "I", # isort
+    "N", # pep-8 naming
+    # "D", # pydocstyle
+    # "UP", # pyupgrade
+    "YTT", # flake8-2020 (version hardcoding)
+    # "ANN", # annotations - werkt niet goed samen met invoke
+    # "ASYNC", # async - gebruiken we hier niet
+    # "S", # bandit (security)
+    # "BLE", # blind except
+    # "FBT", # boolean trap
+    # "B", # bugbear
+    # "DTZ", # datetimes
+    # "T10", # debugger
+    # "DJ", # django
+    "ISC", # implicit string concat (handig voor als je een , mist in een lijst bijv.)
+    "SIM", # simplify
+]
+
+ignore = [
+    # Allow non-abstract empty methods in abstract base classes
+    "B027",
+    # Allow boolean positional values in function calls, like `dict.get(... True)`
+    "FBT003",
+    # Ignore checks for possible passwords
+    "S105", "S106", "S107",
+    # Ignore complexity
+    "C901", "PLR0911", "PLR0912", "PLR0913", "PLR0915",
+]
+unfixable = [
+    # Don't touch unused imports
+    "F401",
+]
+
+[tool.ruff.isort]
+known-first-party = ["monstr"]
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.per-file-ignores]
+# Tests can use magic values, assertions, and relative imports
+"tests/**/*" = ["PLR2004", "S101", "TID252"]
+
+[tool.coverage.run]
+source_pkgs = ["monstr", "tests"]
+branch = true
+parallel = true
+omit = [
+]
+
+[tool.coverage.paths]
+edwh = ["src/monstr"]
+tests = ["tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "no cov",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
