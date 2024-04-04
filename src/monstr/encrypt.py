@@ -151,7 +151,7 @@ class Keys:
                     raise Exception('attempt to use npub as private key!!')
                 priv_k = Keys.hex_key(priv_k)
             k_pair = self.get_new_key_pair(priv_k)
-            if pub_k and k_pair[pub_k] != pub_k:
+            if pub_k and k_pair['pub_k'] != pub_k:
                 raise Exception('attempt to create key with mismatched keypair, maybe just don\'t supply the pub_k?')
             self._pub_k = k_pair['pub_k']
             self._priv_k = k_pair['priv_k']
