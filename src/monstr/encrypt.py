@@ -2,12 +2,18 @@
     code to support encrpted notes using ECDH as NIP4
 """
 
-# FIXME: chenage to use cipher from cryptography so we dont need both Crypto and cryptography
 import os
+from hashlib import sha256
+import hmac
+from math import floor, log2
+import base64
+from Crypto.Cipher import ChaCha20
+# TODO: ARGGH back to 2 encryption libs... move NIP4 to use cyrptodome and get rid of cryptograpy lib...
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
+
 import secp256k1
 import bech32
 from enum import Enum
@@ -137,7 +143,7 @@ class Keys:
         """
 
         # internal hex format
-        self._priv_k= None
+        self._priv_k = None
         self._pub_k = None
 
         # nothing supplied generate new keys
@@ -230,6 +236,7 @@ class SharedEncrypt:
             pk.deserialize(bytes.fromhex('02'+to_pub_k))
             ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
             shared_key = self._key.exchange(ec.ECDH(), ec_key)
+
             self._shared_keys[to_pub_k] = {
                 KeyEnc.BYTES: shared_key,
                 KeyEnc.HEX: shared_key.hex()
@@ -270,3 +277,204 @@ class SharedEncrypt:
         ret += padder.finalize()
 
         return ret
+
+
+class NIP44Encrypt:
+    """
+        base functionality for implementing NIP44
+        https://github.com/paulmillr/nip44
+    """
+
+    NIP44_PAD_MIN = 1
+    NIP44_PAD_MAX = 65535
+
+    def __init__(self, key: Keys):
+        if key.private_key_hex() is None:
+            raise ValueError('NIP44Encrypt:: a key that can sign is required')
+
+        self._keys = key
+        self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._keys.private_key_hex()))
+
+        # we only support v2 which is sha256 hash and this *-v2 salt
+        self._nip44_hash_func = sha256
+        self._nip44_salt = b'nip44-v2'
+
+    # hkdf functions taken and modified from https://en.wikipedia.org/wiki/HKDF 14/4/2024
+    @staticmethod
+    def _hmac_digest(key: bytes, data: bytes, hash_func) -> bytes:
+        return hmac.new(key, data, hash_func).digest()
+
+    @staticmethod
+    def _hkdf_extract(salt: bytes, ikm: bytes, hash_function) -> bytes:
+        if len(salt) == 0:
+            salt = bytes([0] * hash_function.digest_size)
+        return NIP44Encrypt._hmac_digest(salt, ikm, hash_function)
+
+    @staticmethod
+    def _hkdf_expand(prk: bytes, info: bytes, length: int, hashfunction) -> bytes:
+        t = b""
+        okm = b""
+        i = 0
+        while len(okm) < length:
+            i += 1
+            t = NIP44Encrypt._hmac_digest(prk, t + info + bytes([i]), hashfunction)
+            okm += t
+        return okm[:length]
+
+    @staticmethod
+    def _hmac_aad(key, message, aad, hash_function) -> bytes:
+        print('hmac_add', key.hex(), message.hex(), aad.hex())
+
+
+        if len(aad) != 32: raise Exception('AAD associated data must be 32 bytes');
+        return NIP44Encrypt._hmac_digest(key=key,
+                                         data=aad+message,
+                                         hash_func=hash_function)
+
+    @staticmethod
+    def _do_encrypt(padded_data: bytes, key: bytes, nonce: bytes) -> bytes:
+        cha = ChaCha20.new(key=key,
+                           nonce=nonce)
+        return cha.encrypt(padded_data)
+
+    @staticmethod
+    def _calc_padded_len(unpadded_len):
+        next_power = 32
+        if unpadded_len > 1:
+            next_power = (floor(log2(unpadded_len - 1))) + 1
+
+        if next_power <= 256:
+            chunk = 32
+        else:
+            chunk = next_power / 8
+        if unpadded_len <= 32:
+            return 32
+        else:
+            return chunk * (floor((len - 1) / chunk) + 1)
+
+    @staticmethod
+    def _pad(plaintext: str) -> bytes:
+        plaintext = plaintext.encode('utf-8')
+        unpadded_len = len(plaintext)
+
+        if (unpadded_len < NIP44Encrypt.NIP44_PAD_MIN or unpadded_len > NIP44Encrypt.NIP44_PAD_MAX):
+            raise Exception('invalid plaintext length')
+
+        padded_length = NIP44Encrypt._calc_padded_len(unpadded_len)
+
+        prefix = unpadded_len.to_bytes(length=2, byteorder='big', signed=False)
+        sufix = bytes(padded_length-unpadded_len)
+
+        return prefix+plaintext+sufix
+
+    @staticmethod
+    def _unpad(padded: bytes) -> bytes:
+        msg_len = int.from_bytes(padded[:2],byteorder='big')
+        ret = padded[2:msg_len+2]
+
+        if msg_len == 0 \
+                or len(ret) != msg_len \
+                or NIP44Encrypt._calc_padded_len(len(ret))+2 != len(padded):
+
+            raise Exception('nip44 invalid padding')
+
+        return ret
+
+    @staticmethod
+    def _decode_payload(payload) -> tuple[bytes, bytes, bytes]:
+        p_size = len(payload)
+
+        # TODO: size limits should be being calculated from MIN/MAX PAD
+        if p_size < 132 or p_size > 87472:
+            raise Exception(f'invalid payload size {p_size}')
+
+        data = base64.b64decode(payload)
+        d_size = len(data)
+
+        if d_size < 99 or d_size > 65603:
+            raise Exception(f'invalid payload size {p_size}')
+
+        version = data[0]
+        nonce = data[1:33]
+        cipher_text = data[33:d_size-32]
+        mac = data[d_size-32:]
+
+        # only current/supported version
+        if version != 2:
+            raise ValueError(f'nip44_encrypt unsupported version {version}')
+
+        return nonce, cipher_text, mac
+
+    def _nip44_get_conversion_key(self, for_pub_k: str) -> bytes:
+        the_pub: secp256k1.PublicKey = secp256k1.PublicKey(pubkey=bytes.fromhex('02' + for_pub_k), raw=True)
+
+        # Execute ECDH mult for shared key
+        tweaked_key: secp256k1.PublicKey = the_pub.tweak_mul(self._priv_k.private_key)
+
+        return NIP44Encrypt._hkdf_extract(salt=self._nip44_salt,
+                                          ikm=tweaked_key.serialize()[1:],
+                                          hash_function=self._nip44_hash_func)
+
+    def _nip44_get_message_key(self, conversion_key: bytes, nonce: bytes = None) -> tuple[bytes, bytes, bytes]:
+
+        if len(nonce) != 32:
+            raise ValueError('_nip44_get_message_key nonce is not 32 bytes long')
+
+        msg_key = NIP44Encrypt._hkdf_expand(prk=conversion_key,
+                                            info=nonce,
+                                            length=76,
+                                            hashfunction=self._nip44_hash_func)
+
+        chacha_key = msg_key[0:32]
+        chacha_nonce = msg_key[32:44]
+        hmac_key = msg_key[44:76]
+
+        return chacha_key, chacha_nonce, hmac_key
+
+    def nip44_encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
+        if version != 2:
+            raise ValueError(f'nip44_encrypt unsupported version {version}')
+
+        con_key = self._nip44_get_conversion_key(for_pub_k=to_pub_k)
+        nonce = os.urandom(32)
+
+        chacha_key, chacha_nonce, hmac_key = self._nip44_get_message_key(conversion_key=con_key,
+                                                                         nonce=nonce)
+
+        padded = self._pad(plain_text)
+
+        cipher_text = NIP44Encrypt._do_encrypt(padded_data=padded,
+                                               key=chacha_key,
+                                               nonce=chacha_nonce)
+
+        mac = self._hmac_aad(key=hmac_key,
+                             message=cipher_text,
+                             aad=nonce,
+                             hash_function=self._nip44_hash_func)
+
+        payload = version.to_bytes(1,byteorder='big') + nonce + cipher_text + mac
+
+        return base64.b64encode(payload).decode('utf-8')
+
+    def nip44_decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
+        nonce, ciper_text, mac = self._decode_payload(payload)
+
+        con_key = self._nip44_get_conversion_key(for_pub_k)
+
+        chacha_key, chacha_nonce, hmac_key = self._nip44_get_message_key(conversion_key=con_key,
+                                                                         nonce=nonce)
+
+        calculated_mac = NIP44Encrypt._hmac_aad(key=hmac_key,
+                                                message=ciper_text,
+                                                aad=nonce,
+                                                hash_function=self._nip44_hash_func)
+
+        if calculated_mac != mac:
+            raise ValueError('invalid MAC')
+
+        cha = ChaCha20.new(key=chacha_key,
+                           nonce=chacha_nonce)
+        plain_text = cha.decrypt(ciper_text)
+        plain_text = NIP44Encrypt._unpad(padded=plain_text)
+
+        return plain_text.decode('utf-8')
