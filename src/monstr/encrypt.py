@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 import secp256k1
 import bech32
 from enum import Enum
+from monstr.event.event import Event
 
 
 # TODO: sort something out about the different key formats....
@@ -121,6 +122,11 @@ class Keys:
         where npub/hex is supplied the Keys objects will return None for private_key methods
         if the key str doesn't look valid None is returned
         """
+
+        # if already a key object just return as is
+        if isinstance(key, Keys):
+            return key
+
         ret = None
         key = key.lower()
         if Keys.is_valid_key(key):
@@ -278,10 +284,26 @@ class Keys:
 #
 #         return ret
 
-
 class NIP4Encrypt:
 
-    def __init__(self, key: Keys):
+    def nip4_decrypt_event(self, evt: Event) -> Event:
+        """
+            util method for decrypting basic nip4 encrypted events
+        """
+        pub_k = evt.pub_key
+        if pub_k == self._keys.private_key_hex():
+            pub_k = evt.p_tags[0]
+
+        ret = Event.from_JSON(evt.event_data())
+        ret.content = self.decrypt(payload=evt.content,
+                                   for_pub_k=pub_k)
+
+        return ret
+
+
+    def __init__(self, key: Keys | str):
+        if isinstance(key, str):
+            key = Keys(priv_k=key)
         if key.private_key_hex() is None:
             raise ValueError('NIP4Encrypt:: a key that can sign is required')
 
@@ -363,7 +385,10 @@ class NIP44Encrypt:
     NIP44_PAD_MIN = 1
     NIP44_PAD_MAX = 65535
 
-    def __init__(self, key: Keys):
+    def __init__(self, key: Keys | str):
+        if isinstance(key, str):
+            key = Keys(priv_k=key)
+
         if key.private_key_hex() is None:
             raise ValueError('NIP44Encrypt:: a key that can sign is required')
 

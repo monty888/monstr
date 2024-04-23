@@ -1,12 +1,10 @@
 from datetime import datetime
-import base64
 import json
 import logging
 from json import JSONDecodeError
 import secp256k1
 import hashlib
 from monstr.util import util_funcs
-from monstr.encrypt import SharedEncrypt, Keys
 
 
 class EventTags:
@@ -249,23 +247,23 @@ class Event:
 
         return ret
 
-    @staticmethod
-    def decrypt_nip4(evt: 'Event', keys: Keys, check_kind=True) -> 'Event':
-        """
-        returns a copy of evt but with the content decrtpted as NIP4
-        """
-
-        # make a copy
-        ret = Event.from_JSON(evt.event_data())
-        # now decrypt the content
-        pub_k = evt.pub_key
-        if pub_k == keys.public_key_hex():
-            pub_k = evt.p_tags[0]
-
-        ret.content = evt.decrypted_content(priv_key=keys.private_key_hex(),
-                                            pub_key=pub_k,
-                                            check_kind=check_kind)
-        return ret
+    # @staticmethod
+    # def decrypt_nip4(evt: 'Event', keys: Keys, check_kind=True) -> 'Event':
+    #     """
+    #     returns a copy of evt but with the content decrypted as NIP4
+    #     better to use a signer obj
+    #     """
+    #     # make a copy
+    #     ret = Event.from_JSON(evt.event_data())
+    #     # now decrypt the content
+    #     pub_k = evt.pub_key
+    #     if pub_k == keys.public_key_hex():
+    #         pub_k = evt.p_tags[0]
+    #
+    #     ret.content = evt.decrypted_content(priv_key=keys.private_key_hex(),
+    #                                         pub_key=pub_k,
+    #                                         check_kind=check_kind)
+    #     return ret
 
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
         self._id = id
@@ -522,31 +520,24 @@ class Event:
     def content(self) -> str:
         return self._content
 
-    def decrypted_content(self, priv_key, pub_key, check_kind=True):
-        """
-        dycrypts a NIP04 encoded event...
-        :param priv_key:
-        :return:
-        """
-        if check_kind and self.kind not in (Event.KIND_ENCRYPT, Event.KIND_REPUBLISH):
-            raise Exception('attempt to decrypt non encrypted event %s' % self.id)
-
-        my_enc = SharedEncrypt(priv_key)
-        msg_split = self.content.split('?iv')
-
-        try:
-            text = base64.b64decode(msg_split[0])
-            iv = base64.b64decode(msg_split[1])
-
-            if len(pub_key) == 64:
-                pub_key = '02' + pub_key
-
-            ret = my_enc.decrypt_message(text, iv, pub_key).decode('utf8')
-
-        except Exception as e:
-            raise Exception('unable to decrypt event %s using given priv_k' % priv_key)
-
-        return ret
+    # def decrypted_content(self, priv_key, pub_key, check_kind=True):
+    #     """
+    #     dycrypts a NIP04 encoded event...
+    #     :param priv_key:
+    #     :return:
+    #     """
+    #     if check_kind and self.kind not in (Event.KIND_ENCRYPT, Event.KIND_REPUBLISH):
+    #         raise Exception(f'attempt to decrypt non encrypted event {self.id}')
+    #
+    #     my_enc = NIP4Encrypt(key=priv_key)
+    #
+    #     try:
+    #         ret = my_enc.decrypt(self.content, for_pub_k=pub_key)
+    #
+    #     except Exception as e:
+    #         raise Exception('unable to decrypt event using given priv_k')
+    #
+    #     return ret
 
     # def encrypt_content(self, priv_key, pub_key):
     #     my_enc = SharedEncrypt(priv_key)
