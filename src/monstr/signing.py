@@ -2,7 +2,7 @@ from abc import abstractmethod
 from hashlib import sha256
 from monstr.event.event import Event
 from monstr.encrypt import Keys
-from src.monstr.encrypt import NIP44Encrypt, NIP4Encrypt
+from monstr.encrypt import NIP44Encrypt, NIP4Encrypt
 
 
 class SignerInterface:
