@@ -1,6 +1,6 @@
 import hashlib
 import json
-from monstr.encrypt import SharedEncrypt, Keys
+from monstr.encrypt import Keys
 from monstr.signing import SignerInterface
 from monstr.event.event import Event
 from monstr.util import util_funcs
@@ -16,6 +16,7 @@ class Inbox:
         so you need to know which pubkeys you might expect messages from.
         The shared key is added to the wrapping event as shared tag
 
+        TODO - support use of NIP44 for the encryption
 
     """
 

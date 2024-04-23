@@ -284,22 +284,8 @@ class Keys:
 #
 #         return ret
 
+
 class NIP4Encrypt:
-
-    def nip4_decrypt_event(self, evt: Event) -> Event:
-        """
-            util method for decrypting basic nip4 encrypted events
-        """
-        pub_k = evt.pub_key
-        if pub_k == self._keys.private_key_hex():
-            pub_k = evt.p_tags[0]
-
-        ret = Event.from_JSON(evt.event_data())
-        ret.content = self.decrypt(payload=evt.content,
-                                   for_pub_k=pub_k)
-
-        return ret
-
 
     def __init__(self, key: Keys | str):
         if isinstance(key, str):
@@ -374,6 +360,19 @@ class NIP4Encrypt:
         return self._do_decrypt(encrypted_data=text,
                                 iv=iv,
                                 to_pub_k=for_pub_k).decode('utf8')
+
+    def decrypt_event(self, evt: Event) -> Event:
+        """
+            util method for decrypting basic nip4 encrypted events
+        """
+        pub_k = evt.pub_key
+        if pub_k == self._keys.private_key_hex():
+            pub_k = evt.p_tags[0]
+
+        ret = Event.from_JSON(evt.event_data())
+        ret.content = self.decrypt(payload=evt.content,
+                                   for_pub_k=pub_k)
+        return ret
 
 
 class NIP44Encrypt:

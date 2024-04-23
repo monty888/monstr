@@ -20,7 +20,7 @@ import logging
 import json
 from collections import OrderedDict
 from threading import BoundedSemaphore
-from monstr.encrypt import SharedEncrypt
+from monstr.encrypt import NIP4Encrypt
 from monstr.util import util_funcs
 from monstr.event.event import Event
 
@@ -258,50 +258,33 @@ class LastEventHandler(EventHandler):
 
 class DecryptPrintEventHandler(PrintEventHandler):
     """
-        prints out decrypted messages we created or sent to us
-        NOTE: this is not the style that is compatiable with clust, that uses a public inbox
-        and encrypts the event as a package... want to add this too
+        Basic event printer for encrypted events
+        supports NIP4 events,
+        add support for NIP44
+        add support for signer interface for decrypting events -
+        events would have to be queued and printed
     """
-
     def __init__(self, priv_k, view_on=True):
         self._priv_k = priv_k
-        self._my_encrypt = SharedEncrypt(priv_k)
+        self._nip4_decrypt = NIP4Encrypt(key=priv_k)
         super(DecryptPrintEventHandler, self).__init__(view_on)
-
-    def _do_dycrypt(self, crypt_text, pub_key):
-        msg_split = crypt_text.split('?iv')
-        text = base64.b64decode(msg_split[0])
-        iv = base64.b64decode(msg_split[1])
-
-        return (self._my_encrypt.decrypt_message(encrypted_data=text,
-                                                 iv=iv,
-                                                 # note the ext is ignored anyway
-                                                 pub_key_hex='02' + pub_key))
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
         if self._view_on is False:
             return
-        do_decrypt = False
-        to_key = evt['tags'][0][1]
-        print(to_key, self._my_encrypt.public_key_hex)
-        if evt['kind'] == Event.KIND_ENCRYPT:
-            # messages we created
-            if evt['pubkey'] == self._my_encrypt.public_key_hex[2:]:
-                pub_key = to_key
-                do_decrypt = True
 
-            # messages sent to us
-            elif to_key == self._my_encrypt.public_key_hex[2:]:
-                pub_key = evt['pubkey']
-                do_decrypt = True
+        out_event = evt
+        try:
+            out_event = self._nip4_decrypt.decrypt_event(evt)
+        except:
+            pass
 
-        content = evt['content']
-        if do_decrypt:
-            content = self._do_dycrypt(evt['content'], pub_key)
+        self.print(the_client, sub_id, out_event)
 
-        print('%s: %s - %s' % (util_funcs.ticks_as_date(evt['created_at']),
-                               evt['pubkey'],
-                               content))
+    def print(self, the_client: Client, sub_id, evt: Event):
+        print(f'{util_funcs.ticks_as_date(evt.created_at)}'
+              f'{util_funcs.str_tails(evt.pub_key)}'
+              f'{evt.content}')
 
 
 class FileEventHandler:

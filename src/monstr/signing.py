@@ -24,7 +24,7 @@ class SignerInterface:
         raise NotImplementedError('nip4 encryption not implemented for this signer')
 
     @abstractmethod
-    async def nip4_decrypt(self, cipher_text: str, for_pub_k: str) -> str:
+    async def nip4_decrypt(self, payload: str, for_pub_k: str) -> str:
         raise NotImplementedError('nip4 encryption not implemented for this signer')
 
     @abstractmethod
@@ -74,7 +74,7 @@ class BasicKeySigner(SignerInterface):
                                           for_pub_k=for_pub_k)
 
     async def nip4_decrypt_event(self, evt: Event) -> Event:
-        return self._nip4_encrypt.nip4_decrypt_event(evt)
+        return self._nip4_encrypt.decrypt_event(evt)
 
     async def nip44_encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
         return self._nip44_encrypt.encrypt(plain_text=plain_text,
