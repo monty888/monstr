@@ -1,18 +1,18 @@
 """
     code to support encrpted notes using ECDH as NIP4
 """
-
+import encodings.utf_8
 import os
 from hashlib import sha256
 import hmac
 from math import floor, log2
 import base64
-from Crypto.Cipher import ChaCha20
-# TODO: ARGGH back to 2 encryption libs... move NIP4 to use cyrptodome and get rid of cryptograpy lib...
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import padding
+from Crypto.Cipher import ChaCha20, AES
+from Crypto.Util.Padding import pad, unpad
+# from Crypto.PublicKey import ECC
+# unfortunately we need this both crypto libs to as PyCryptodome doesn't seem to support sep256k1
+# and cryptograpy.io doesn't have Chacha without the mac that we need for NIP44 as far as I could understand it
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
 
 import secp256k1
 import bech32
@@ -202,32 +202,98 @@ class Keys:
         return '\n'.join(ret)
 
 
-class SharedEncrypt:
+# class SharedEncrypt:
+#     # TODO - to be removed ...., replace either using NIP4 class directly or use signer
+#     def __init__(self, priv_k_hex):
+#         """
+#         :param priv_k_hex:              our private key
+#         TODO: take a look at priv_k and try to create and work out from it
+#
+#         """
+#
+#         # us, hex, int and key
+#         self._priv_hex = priv_k_hex
+#         self._priv_int = int(priv_k_hex, 16)
+#         self._key = ec.derive_private_key(self._priv_int, ec.SECP256K1())
+#         # our public key for priv key
+#         self._pub_key = self._key.public_key()
+#         # shared key for priv/pub ECDH
+#         self._shared_keys = {}
+#
+#     @property
+#     def public_key_hex(self):
+#         return self.public_key_bytes.hex()
+#
+#     @property
+#     def public_key_bytes(self):
+#         return self._pub_key.public_bytes(encoding=serialization.Encoding.X962,
+#                                           format=serialization.PublicFormat.CompressedPoint)
+#
+#     def _get_derived_shared_key(self, to_pub_k: str):
+#         # first time we need to derive the shared key for us and the pub_k
+#         if to_pub_k not in self._shared_keys:
+#             pk = secp256k1.PublicKey()
+#             pk.deserialize(bytes.fromhex('02'+to_pub_k))
+#             ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
+#             shared_key = self._key.exchange(ec.ECDH(), ec_key)
+#
+#             self._shared_keys[to_pub_k] = {
+#                 KeyEnc.BYTES: shared_key,
+#                 KeyEnc.HEX: shared_key.hex()
+#             }
+#
+#     def get_echd_key_hex(self, to_pub_k: str) -> str:
+#         self._get_derived_shared_key(to_pub_k=to_pub_k)
+#         return self._shared_keys[to_pub_k][KeyEnc.HEX]
+#
+#     def encrypt_message(self, data, to_pub_k: str):
+#         share_key = self.get_echd_key_hex(to_pub_k)
+#         key = secp256k1.PrivateKey().deserialize(share_key)
+#         # iv = get_random_bytes(16)
+#         iv = os.urandom(16)
+#         # data = Padding.pad(data, 16)
+#         padder = padding.PKCS7(128).padder()
+#         data = padder.update(data)
+#         data += padder.finalize()
+#         # cipher = AES.new(key, AES.MODE_CBC, iv)
+#         ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
+#         encryptor = ciper.encryptor()
+#         return {
+#             'text': encryptor.update(data) + encryptor.finalize(),
+#             'iv': iv,
+#             'shared_key': share_key
+#         }
+#
+#     def decrypt_message(self, encrypted_data, iv, to_pub_k: str):
+#         share_key = self.get_echd_key_hex(to_pub_k=to_pub_k)
+#
+#         key = secp256k1.PrivateKey().deserialize(share_key)
+#         ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
+#         decryptor = ciper.decryptor()
+#
+#         ret = decryptor.update(encrypted_data)
+#         padder = padding.PKCS7(128).unpadder()
+#         ret = padder.update(ret)
+#         ret += padder.finalize()
+#
+#         return ret
 
-    def __init__(self, priv_k_hex):
-        """
-        :param priv_k_hex:              our private key
-        TODO: take a look at priv_k and try to create and work out from it
 
-        """
+class NIP4Encrypt:
 
-        # us, hex, int and key
-        self._priv_hex = priv_k_hex
-        self._priv_int = int(priv_k_hex, 16)
-        self._key = ec.derive_private_key(self._priv_int, ec.SECP256K1())
-        # our public key for priv key
-        self._pub_key = self._key.public_key()
+    def __init__(self, key: Keys):
+        if key.private_key_hex() is None:
+            raise ValueError('NIP4Encrypt:: a key that can sign is required')
+
+        self._keys = key
+        self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._keys.private_key_hex()))
+
+        # self._priv_int = int(priv_k_hex, 16)
+
+        self._ec_key = ec.derive_private_key(int.from_bytes(self._priv_k.private_key,byteorder='big'), ec.SECP256K1())
+
         # shared key for priv/pub ECDH
         self._shared_keys = {}
-
-    @property
-    def public_key_hex(self):
-        return self.public_key_bytes.hex()
-
-    @property
-    def public_key_bytes(self):
-        return self._pub_key.public_bytes(encoding=serialization.Encoding.X962,
-                                          format=serialization.PublicFormat.CompressedPoint)
 
     def _get_derived_shared_key(self, to_pub_k: str):
         # first time we need to derive the shared key for us and the pub_k
@@ -235,7 +301,7 @@ class SharedEncrypt:
             pk = secp256k1.PublicKey()
             pk.deserialize(bytes.fromhex('02'+to_pub_k))
             ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
-            shared_key = self._key.exchange(ec.ECDH(), ec_key)
+            shared_key = self._ec_key.exchange(ec.ECDH(), ec_key)
 
             self._shared_keys[to_pub_k] = {
                 KeyEnc.BYTES: shared_key,
@@ -246,37 +312,46 @@ class SharedEncrypt:
         self._get_derived_shared_key(to_pub_k=to_pub_k)
         return self._shared_keys[to_pub_k][KeyEnc.HEX]
 
-    def encrypt_message(self, data, to_pub_k: str):
+    def _do_encrypt(self, plain_text: str, to_pub_k: str):
+        data = bytes(plain_text.encode('utf8'))
         share_key = self.get_echd_key_hex(to_pub_k)
         key = secp256k1.PrivateKey().deserialize(share_key)
-        # iv = get_random_bytes(16)
+
         iv = os.urandom(16)
-        # data = Padding.pad(data, 16)
-        padder = padding.PKCS7(128).padder()
-        data = padder.update(data)
-        data += padder.finalize()
-        # cipher = AES.new(key, AES.MODE_CBC, iv)
-        ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
-        encryptor = ciper.encryptor()
+        data = pad(data, block_size=16, style='pkcs7')
+        ciper = AES.new(key=key, mode=AES.MODE_CBC, iv=iv)
+        ciper_text = ciper.encrypt(data)
+
         return {
-            'text': encryptor.update(data) + encryptor.finalize(),
+            'text': ciper_text,
             'iv': iv,
             'shared_key': share_key
         }
 
-    def decrypt_message(self, encrypted_data, iv, to_pub_k: str):
+    def encrypt(self, plain_text: str, to_pub_k: str) -> str:
+        crypt_message = self._do_encrypt(plain_text=plain_text,
+                                         to_pub_k=to_pub_k)
+        enc_message = base64.b64encode(crypt_message['text'])
+        iv_env = base64.b64encode(crypt_message['iv'])
+        return f'{enc_message.decode()}?iv={iv_env.decode()}'
+
+    def _do_decrypt(self, encrypted_data, iv, to_pub_k: str):
         share_key = self.get_echd_key_hex(to_pub_k=to_pub_k)
 
         key = secp256k1.PrivateKey().deserialize(share_key)
-        ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
-        decryptor = ciper.decryptor()
+        ciper = AES.new(key=key,
+                        mode=AES.MODE_CBC,
+                        iv=iv)
+        padded = ciper.decrypt(encrypted_data)
+        return unpad(padded, block_size=16, style='pkcs7')
 
-        ret = decryptor.update(encrypted_data)
-        padder = padding.PKCS7(128).unpadder()
-        ret = padder.update(ret)
-        ret += padder.finalize()
-
-        return ret
+    def decrypt(self, payload: str, for_pub_k: str) -> str:
+        msg_split = payload.split('?iv')
+        text = base64.b64decode(msg_split[0])
+        iv = base64.b64decode(msg_split[1])
+        return self._do_decrypt(encrypted_data=text,
+                                iv=iv,
+                                to_pub_k=for_pub_k).decode('utf8')
 
 
 class NIP44Encrypt:
@@ -330,12 +405,6 @@ class NIP44Encrypt:
         return NIP44Encrypt._hmac_digest(key=key,
                                          data=aad+message,
                                          hash_func=hash_function)
-
-    @staticmethod
-    def _do_encrypt(padded_data: bytes, key: bytes, nonce: bytes) -> bytes:
-        cha = ChaCha20.new(key=key,
-                           nonce=nonce)
-        return cha.encrypt(padded_data)
 
     @staticmethod
     def _calc_padded_len(unpadded_len):
@@ -431,7 +500,13 @@ class NIP44Encrypt:
 
         return chacha_key, chacha_nonce, hmac_key
 
-    def nip44_encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
+    @staticmethod
+    def _do_encrypt(padded_data: bytes, key: bytes, nonce: bytes) -> bytes:
+        cha = ChaCha20.new(key=key,
+                           nonce=nonce)
+        return cha.encrypt(padded_data)
+
+    def encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
         if version != 2:
             raise ValueError(f'nip44_encrypt unsupported version {version}')
 
@@ -456,7 +531,13 @@ class NIP44Encrypt:
 
         return base64.b64encode(payload).decode('utf-8')
 
-    def nip44_decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
+    @staticmethod
+    def _do_decrypt(ciper_text: bytes, key: bytes, nonce: bytes) -> bytes:
+        cha = ChaCha20.new(key=key,
+                           nonce=nonce)
+        return cha.decrypt(ciper_text)
+
+    def decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
         nonce, ciper_text, mac = self._decode_payload(payload)
 
         con_key = self._nip44_get_conversion_key(for_pub_k)
@@ -472,9 +553,10 @@ class NIP44Encrypt:
         if calculated_mac != mac:
             raise ValueError('invalid MAC')
 
-        cha = ChaCha20.new(key=chacha_key,
-                           nonce=chacha_nonce)
-        plain_text = cha.decrypt(ciper_text)
-        plain_text = NIP44Encrypt._unpad(padded=plain_text)
+        padded = NIP44Encrypt._do_decrypt(ciper_text=ciper_text,
+                                          key=chacha_key,
+                                          nonce=chacha_nonce)
+
+        plain_text = NIP44Encrypt._unpad(padded=padded)
 
         return plain_text.decode('utf-8')

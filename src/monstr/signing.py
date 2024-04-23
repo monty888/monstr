@@ -1,15 +1,13 @@
 from abc import abstractmethod
-import base64
 from hashlib import sha256
-import hmac
 from monstr.event.event import Event
 from monstr.encrypt import SharedEncrypt, Keys
-from src.monstr.encrypt import NIP44Encrypt
+from src.monstr.encrypt import NIP44Encrypt, NIP4Encrypt
 
 
 class SignerInterface:
 
-    def decrypt_nip4(self, evt: Event) -> Event:
+    async def nip4_decrypt_event(self, evt: Event) -> Event:
         # util method that'll work decrypting events as long as there p_tags are correct nip4 style
 
         # work out the decrypt pub_k
@@ -18,8 +16,8 @@ class SignerInterface:
             pub_k = evt.p_tags[0]
 
         ret = Event.from_JSON(evt.event_data())
-        ret.content = self.decrypt_text(encrypt_text=evt.content,
-                                        for_pub_k=pub_k)
+        ret.content = await self.nip4_decrypt(cipher_text=evt.content,
+                                              for_pub_k=pub_k)
 
         return ret
 
@@ -66,6 +64,7 @@ class BasicKeySigner(SignerInterface):
         self._nip44_hash_func = sha256
         self._nip44_salt = b'nip44-v2'
 
+        self._nip4_encrypt = NIP4Encrypt(key=self._keys)
         self._nip44_encrypt = NIP44Encrypt(key=self._keys)
 
     async def get_public_key(self) -> str:
@@ -75,32 +74,25 @@ class BasicKeySigner(SignerInterface):
         evt.sign(self._keys.private_key_hex())
 
     async def echd_key(self, to_pub_k: str) -> str:
-        return self._encryptor.get_echd_key_hex(to_pub_k)
+        return self._nip4_encrypt.get_echd_key_hex(to_pub_k)
 
     async def nip4_encrypt(self, plain_text: str, to_pub_k: str) -> str:
-        crypt_message = self._encryptor.encrypt_message(data=bytes(plain_text.encode('utf8')),
-                                                        to_pub_k=to_pub_k)
-        enc_message = base64.b64encode(crypt_message['text'])
-        iv_env = base64.b64encode(crypt_message['iv'])
-        return f'{enc_message.decode()}?iv={iv_env.decode()}'
+        return self._nip4_encrypt.encrypt(plain_text=plain_text,
+                                          to_pub_k=to_pub_k)
 
-    async def nip4_decrypt(self, cipher_text, for_pub_k: str) -> str:
-        msg_split = cipher_text.split('?iv')
-        text = base64.b64decode(msg_split[0])
-        iv = base64.b64decode(msg_split[1])
-        return self._encryptor.decrypt_message(encrypted_data=text,
-                                               iv=iv,
-                                               to_pub_k=for_pub_k).decode('utf8')
+    async def nip4_decrypt(self, payload: str, for_pub_k: str) -> str:
+        return self._nip4_encrypt.decrypt(payload=payload,
+                                          for_pub_k=for_pub_k)
 
     async def nip44_encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
-        return self._nip44_encrypt.nip44_encrypt(plain_text=plain_text,
+        return self._nip44_encrypt.encrypt(plain_text=plain_text,
                                                  to_pub_k=to_pub_k,
                                                  version=version)
 
     async def nip44_decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
-        return self._nip44_encrypt.nip44_decrypt(payload=payload,
-                                                 for_pub_k=for_pub_k,
-                                                 version=version)
+        return self._nip44_encrypt.decrypt(payload=payload,
+                                           for_pub_k=for_pub_k,
+                                           version=version)
 
 
 

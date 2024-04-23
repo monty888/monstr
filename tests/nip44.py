@@ -59,12 +59,23 @@ async def nip44_encrypt_payload(payload: str, version=2):
     payload = await my_sign.nip44_encrypt(plain_text=test_msg,
                                              to_pub_k=pub_k)
 
-    print(f'payload: {payload}')
+    print(f'nip44 payload: {payload}')
 
     plain_text = await my_sign.nip44_decrypt(payload=payload,
                                              for_pub_k=pub_k)
 
-    print(f'plain text: {plain_text}')
+    print(f'nip44 plain text: {plain_text}')
+
+    payload = await my_sign.nip4_encrypt(plain_text=plain_text,
+                                         to_pub_k=pub_k)
+
+    print(f'nip 4 payload: {payload}')
+
+    plain_text = await my_sign.nip4_decrypt(payload=payload,
+                                            for_pub_k=pub_k)
+
+    print(f'nip4 plain text: {plain_text}')
+
 
 if __name__ == '__main__':
     asyncio.run(make_nip44_event())
