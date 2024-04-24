@@ -208,83 +208,6 @@ class Keys:
         return '\n'.join(ret)
 
 
-# class SharedEncrypt:
-#     # TODO - to be removed ...., replace either using NIP4 class directly or use signer
-#     def __init__(self, priv_k_hex):
-#         """
-#         :param priv_k_hex:              our private key
-#         TODO: take a look at priv_k and try to create and work out from it
-#
-#         """
-#
-#         # us, hex, int and key
-#         self._priv_hex = priv_k_hex
-#         self._priv_int = int(priv_k_hex, 16)
-#         self._key = ec.derive_private_key(self._priv_int, ec.SECP256K1())
-#         # our public key for priv key
-#         self._pub_key = self._key.public_key()
-#         # shared key for priv/pub ECDH
-#         self._shared_keys = {}
-#
-#     @property
-#     def public_key_hex(self):
-#         return self.public_key_bytes.hex()
-#
-#     @property
-#     def public_key_bytes(self):
-#         return self._pub_key.public_bytes(encoding=serialization.Encoding.X962,
-#                                           format=serialization.PublicFormat.CompressedPoint)
-#
-#     def _get_derived_shared_key(self, to_pub_k: str):
-#         # first time we need to derive the shared key for us and the pub_k
-#         if to_pub_k not in self._shared_keys:
-#             pk = secp256k1.PublicKey()
-#             pk.deserialize(bytes.fromhex('02'+to_pub_k))
-#             ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
-#             shared_key = self._key.exchange(ec.ECDH(), ec_key)
-#
-#             self._shared_keys[to_pub_k] = {
-#                 KeyEnc.BYTES: shared_key,
-#                 KeyEnc.HEX: shared_key.hex()
-#             }
-#
-#     def get_echd_key_hex(self, to_pub_k: str) -> str:
-#         self._get_derived_shared_key(to_pub_k=to_pub_k)
-#         return self._shared_keys[to_pub_k][KeyEnc.HEX]
-#
-#     def encrypt_message(self, data, to_pub_k: str):
-#         share_key = self.get_echd_key_hex(to_pub_k)
-#         key = secp256k1.PrivateKey().deserialize(share_key)
-#         # iv = get_random_bytes(16)
-#         iv = os.urandom(16)
-#         # data = Padding.pad(data, 16)
-#         padder = padding.PKCS7(128).padder()
-#         data = padder.update(data)
-#         data += padder.finalize()
-#         # cipher = AES.new(key, AES.MODE_CBC, iv)
-#         ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
-#         encryptor = ciper.encryptor()
-#         return {
-#             'text': encryptor.update(data) + encryptor.finalize(),
-#             'iv': iv,
-#             'shared_key': share_key
-#         }
-#
-#     def decrypt_message(self, encrypted_data, iv, to_pub_k: str):
-#         share_key = self.get_echd_key_hex(to_pub_k=to_pub_k)
-#
-#         key = secp256k1.PrivateKey().deserialize(share_key)
-#         ciper = Cipher(algorithms.AES(key), modes.CBC(iv))
-#         decryptor = ciper.decryptor()
-#
-#         ret = decryptor.update(encrypted_data)
-#         padder = padding.PKCS7(128).unpadder()
-#         ret = padder.update(ret)
-#         ret += padder.finalize()
-#
-#         return ret
-
-
 class NIP4Encrypt:
 
     def __init__(self, key: Keys | str):
@@ -424,8 +347,9 @@ class NIP44Encrypt:
     def _hmac_aad(key, message, aad, hash_function) -> bytes:
         print('hmac_add', key.hex(), message.hex(), aad.hex())
 
+        if len(aad) != 32:
+            raise Exception('AAD associated data must be 32 bytes');
 
-        if len(aad) != 32: raise Exception('AAD associated data must be 32 bytes');
         return NIP44Encrypt._hmac_digest(key=key,
                                          data=aad+message,
                                          hash_func=hash_function)
@@ -450,7 +374,7 @@ class NIP44Encrypt:
         plaintext = plaintext.encode('utf-8')
         unpadded_len = len(plaintext)
 
-        if (unpadded_len < NIP44Encrypt.NIP44_PAD_MIN or unpadded_len > NIP44Encrypt.NIP44_PAD_MAX):
+        if unpadded_len < NIP44Encrypt.NIP44_PAD_MIN or unpadded_len > NIP44Encrypt.NIP44_PAD_MAX:
             raise Exception('invalid plaintext length')
 
         padded_length = NIP44Encrypt._calc_padded_len(unpadded_len)
@@ -462,7 +386,7 @@ class NIP44Encrypt:
 
     @staticmethod
     def _unpad(padded: bytes) -> bytes:
-        msg_len = int.from_bytes(padded[:2],byteorder='big')
+        msg_len = int.from_bytes(padded[:2], byteorder='big')
         ret = padded[2:msg_len+2]
 
         if msg_len == 0 \

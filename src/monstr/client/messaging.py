@@ -21,7 +21,7 @@ import logging
 from monstr.ident.profile import Profile
 from monstr.client.client import Client
 from monstr.event.event import Event
-from monstr.encrypt import SharedEncrypt
+from monstr.encrypt import NIP4Encrypt
 
 
 class MessageThreads:
@@ -163,8 +163,8 @@ class MessageThreads:
         # # encrypt text as NIP4 if encrypted kind
         if kind == Event.KIND_ENCRYPT:
             # as decrypt add this as event method
-            my_enc = SharedEncrypt(self._from.private_key)
-            my_enc.derive_shared_key('02' + to_user.public_key)
+            my_enc = NIP4Encrypt(self._from.private_key)
+            my_enc.get_echd_key_hex(to_user.public_key)
             # crypt_message = my_enc.encrypt_message(b'a very simple message to test encrypt')
             crypt_message = my_enc.encrypt_message(bytes(text.encode('utf8')))
             enc_message = base64.b64encode(crypt_message['text'])

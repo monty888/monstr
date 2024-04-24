@@ -95,11 +95,10 @@ class Inbox:
                     tags=tags)
 
         if shared_key:
-            evt.content = await from_sign.encrypt_text(plain_text=evt.content,
+            evt.content = await from_sign.nip4_encrypt(plain_text=evt.content,
                                                        to_pub_k=to_k)
-            # evt = await from_sign.encrypt_event(evt, to_pub_k=to_k)
         else:
-            evt.content = await self._signer.encrypt_text(plain_text=evt.content,
+            evt.content = await self._signer.nip4_encrypt(plain_text=evt.content,
                                                           to_pub_k=await self.pub_key)
 
         await self._signer.sign_event(evt)
@@ -121,7 +120,7 @@ class Inbox:
                 share_map = self._share_maps[user_pub_k]
             if shared in share_map:
                 try:
-                    content = await user_sign.decrypt_text(encrypt_text=evt.content,
+                    content = await user_sign.nip4_decrypt(payload=evt.content,
                                                            for_pub_k=share_map[shared])
 
                     ret = Event.from_JSON(json.loads(content))
@@ -130,7 +129,7 @@ class Inbox:
         # we'll just treat it as standard
         else:
             try:
-                content = await self._signer.decrypt_text(encrypt_text=evt.content,
+                content = await self._signer.nip4_decrypt(payload=evt.content,
                                                           for_pub_k=await self.pub_key)
                 ret = Event.from_JSON(json.loads(content))
             except Exception as e:
