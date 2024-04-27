@@ -1,42 +1,10 @@
-import asyncio
-import secp256k1
-from hashlib import sha256
-import hmac
-from monstr.event.event import Event
-from monstr.encrypt import Keys
-# from monstr.signing import BasicKeySigner, SignerInterface
-from src.monstr.signing import SignerInterface, BasicKeySigner
+import json
+import os
+from monstr.encrypt import Keys, NIP44Encrypt
+from monstr.util import util_funcs
+from monstr.signing import SignerInterface, BasicKeySigner
 
-async def make_nip44_event():
-    await nip44_encrypt_payload('some content for the event')
-
-def hmac_digest(key: bytes, data: bytes, hash_function) -> bytes:
-    return hmac.new(key, data, hash_function).digest()
-
-def hkdf_extract(salt: bytes, ikm: bytes, hash_function) -> bytes:
-    if len(salt) == 0:
-        salt = bytes([0] * hash_function.digest_size)
-    return hmac_digest(salt, ikm,hash_function)
-
-
-def get_conversion_key(priv_k: str, to_pub_k: str):
-
-    the_priv: secp256k1.PrivateKey = secp256k1.PrivateKey(privkey=bytes.fromhex(priv_k))
-    print(f'using priv: {the_priv.private_key.hex()}')
-
-    the_pub: secp256k1.PublicKey = secp256k1.PublicKey(pubkey=bytes.fromhex('02'+to_pub_k), raw=True)
-    print(f'using pub_k: {the_pub.serialize().hex()}')
-
-    tweaked_key: secp256k1.PublicKey = the_pub.tweak_mul(the_priv.private_key)
-
-    print(f'tweaked {tweaked_key.serialize().hex()}')
-
-    ret = hkdf_extract(salt=b'nip44-v2',
-                       ikm=tweaked_key.serialize()[1:],
-                       hash_function=sha256)
-
-    print(f'conversion key: {ret.hex()}')
-    return ret
+tail = util_funcs.str_tails
 
 async def nip44_encrypt_payload(payload: str, version=2):
     # testing for ...., then make use test case file
@@ -77,7 +45,88 @@ async def nip44_encrypt_payload(payload: str, version=2):
     print(f'nip4 plain text: {plain_text}')
 
 
-if __name__ == '__main__':
-    asyncio.run(make_nip44_event())
+def test_file():
+    """
+        runs through some basic tests against the values we should as from test vectors file
+        from https://github.com/paulmillr/nip44/blob/main/nip44.vectors.json
+    """
+    cwd = os.getcwd()
 
+    f_name = 'nip44.vectors.json'
+
+    if cwd.endswith('/tests'):
+        test_file = f'{cwd}/{f_name}'
+    else:
+        test_file = f'./tests/{f_name}'
+
+    print(test_file)
+
+    def _test_conversation_key(the_test):
+        sec = the_test['sec1']
+        to_pub = the_test['pub2']
+        conversation_key = the_test['conversation_key']
+        print(f'sec: {tail(sec)} - pub: {tail(to_pub)} expected conversation key: {tail(conversation_key)}')
+
+        my_enc = NIP44Encrypt(sec)
+        assert my_enc._nip44_get_conversion_key(to_pub).hex() == conversation_key
+
+    def _test_message_keys(the_test, conversation_key):
+        nonce = bytes.fromhex(the_test['nonce'])
+        chacha_key = bytes.fromhex(the_test['chacha_key'])
+        chacha_nonce = bytes.fromhex(the_test['chacha_nonce'])
+        hmac_key = bytes.fromhex(the_test['hmac_key'])
+
+        print(f'nonce: {tail(nonce.hex())} expected '
+              f'chacha key: {tail(chacha_key.hex())} '
+              f'chacha nonce: {tail(chacha_nonce.hex())} '
+              f'hmac key: {tail(hmac_key.hex())}')
+
+        # random keys - it doesn't actually matter what they are
+        my_enc = NIP44Encrypt(Keys())
+
+        cacl_chacha_key, calc_chacha_nonce, calc_hmac_key = my_enc._nip44_get_message_key(conversion_key=conversation_key,
+                                                                                          nonce=nonce)
+
+        assert cacl_chacha_key == chacha_key
+        assert calc_chacha_nonce == chacha_nonce
+        assert calc_hmac_key == hmac_key
+
+        # my_enc = NIP44Encrypt(sec)
+        # assert my_enc._nip44_get_conversion_key(to_pub).hex() == conversation_key
+
+
+    def _do_valid_tests(test_json):
+        for test_name in test_json:
+            if test_name == 'get_conversation_key':
+                the_tests = test_json[test_name]
+                print(f'doing conversation key tests')
+                n_tests = len(the_tests)
+                for tn in range(0, n_tests):
+                    _test_conversation_key(the_tests[tn])
+                    print(f'{tn+1} of {n_tests} OK')
+            elif test_name == 'get_message_keys':
+                the_tests = test_json[test_name]['keys']
+                conversation_key = bytes.fromhex(test_json[test_name]['conversation_key'])
+                print(f'doing message key tests using conversation key: {tail(conversation_key.hex())}')
+                n_tests = len(the_tests)
+                for tn in range(0, n_tests):
+                    _test_message_keys(the_tests[tn], conversation_key)
+                    print(f'{tn + 1} of {n_tests} OK')
+
+    """
+        open the file, we interested in the v2/valid and v2/invalid sections
+        tests include methods that would never be called externally as they're intermediate steps 
+    """
+    test_file = 'nip44.vectors.json'
+    with open(test_file, 'r') as f:
+        nip44_tests = json.load(f)
+    for c_item in nip44_tests:
+        if c_item == 'v2':
+            for test_type in nip44_tests[c_item]:
+                if test_type == 'valid':
+                    _do_valid_tests(nip44_tests[c_item][test_type])
+
+if __name__ == '__main__':
+    # asyncio.run(make_nip44_event())
+    test_file()
 

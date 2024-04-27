@@ -422,7 +422,7 @@ class NIP44Encrypt:
 
         return nonce, cipher_text, mac
 
-    def _nip44_get_conversion_key(self, for_pub_k: str) -> bytes:
+    def _nip44_get_conversation_key(self, for_pub_k: str) -> bytes:
         the_pub: secp256k1.PublicKey = secp256k1.PublicKey(pubkey=bytes.fromhex('02' + for_pub_k), raw=True)
 
         # Execute ECDH mult for shared key
@@ -432,7 +432,8 @@ class NIP44Encrypt:
                                           ikm=tweaked_key.serialize()[1:],
                                           hash_function=self._nip44_hash_func)
 
-    def _nip44_get_message_key(self, conversion_key: bytes, nonce: bytes = None) -> tuple[bytes, bytes, bytes]:
+
+    def _nip44_get_message_key(self, conversion_key: bytes, nonce: bytes) -> tuple[bytes, bytes, bytes]:
 
         if len(nonce) != 32:
             raise ValueError('_nip44_get_message_key nonce is not 32 bytes long')
@@ -458,7 +459,7 @@ class NIP44Encrypt:
         if version != 2:
             raise ValueError(f'nip44_encrypt unsupported version {version}')
 
-        con_key = self._nip44_get_conversion_key(for_pub_k=to_pub_k)
+        con_key = self._nip44_get_conversation_key(for_pub_k=to_pub_k)
         nonce = os.urandom(32)
 
         chacha_key, chacha_nonce, hmac_key = self._nip44_get_message_key(conversion_key=con_key,
@@ -488,7 +489,7 @@ class NIP44Encrypt:
     def decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
         nonce, ciper_text, mac = self._decode_payload(payload)
 
-        con_key = self._nip44_get_conversion_key(for_pub_k)
+        con_key = self._nip44_get_conversation_key(for_pub_k)
 
         chacha_key, chacha_nonce, hmac_key = self._nip44_get_message_key(conversion_key=con_key,
                                                                          nonce=nonce)
