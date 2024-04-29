@@ -78,17 +78,9 @@ class BasicKeySigner(SignerInterface):
 
     async def nip44_encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
         return self._nip44_encrypt.encrypt(plain_text=plain_text,
-                                                 to_pub_k=to_pub_k,
-                                                 version=version)
-
-    async def nip44_decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
-        return self._nip44_encrypt.decrypt(payload=payload,
-                                           for_pub_k=for_pub_k,
+                                           to_pub_k=to_pub_k,
                                            version=version)
 
-
-
-
-
-
-
+    async def nip44_decrypt(self, payload: str, for_pub_k: str) -> str:
+        return self._nip44_encrypt.decrypt(payload=payload,
+                                           for_pub_k=for_pub_k)

@@ -1,10 +1,12 @@
 import json
 import os
+import asyncio
 from monstr.encrypt import Keys, NIP44Encrypt
 from monstr.util import util_funcs
 from monstr.signing import SignerInterface, BasicKeySigner
 
 tail = util_funcs.str_tails
+
 
 async def nip44_encrypt_payload(payload: str, version=2):
     # testing for ...., then make use test case file
@@ -17,8 +19,6 @@ async def nip44_encrypt_payload(payload: str, version=2):
 
     k = Keys(priv_k=priv_k)
     my_sign:SignerInterface = BasicKeySigner(key=k)
-
-
 
     # get_conversion_key(priv_k=priv_k, to_pub_k=pub_k)
     test_msg = 'SOME TEST TEXT!!!'
@@ -68,7 +68,7 @@ def test_file():
         print(f'sec: {tail(sec)} - pub: {tail(to_pub)} expected conversation key: {tail(conversation_key)}')
 
         my_enc = NIP44Encrypt(sec)
-        assert my_enc._nip44_get_conversion_key(to_pub).hex() == conversation_key
+        assert my_enc._get_conversation_key(to_pub).hex() == conversation_key
 
     def _test_message_keys(the_test, conversation_key):
         nonce = bytes.fromhex(the_test['nonce'])
@@ -84,15 +84,59 @@ def test_file():
         # random keys - it doesn't actually matter what they are
         my_enc = NIP44Encrypt(Keys())
 
-        cacl_chacha_key, calc_chacha_nonce, calc_hmac_key = my_enc._nip44_get_message_key(conversion_key=conversation_key,
-                                                                                          nonce=nonce)
+        cacl_chacha_key, calc_chacha_nonce, calc_hmac_key = my_enc._get_message_key(conversion_key=conversation_key,
+                                                                                    nonce=nonce)
 
         assert cacl_chacha_key == chacha_key
         assert calc_chacha_nonce == chacha_nonce
         assert calc_hmac_key == hmac_key
 
-        # my_enc = NIP44Encrypt(sec)
-        # assert my_enc._nip44_get_conversion_key(to_pub).hex() == conversation_key
+    def _test_do_encrypt_decrypt(the_test):
+        sec1 = the_test['sec1']
+        k1 = Keys(sec1)
+        sec2 = the_test['sec2']
+        k2 = Keys(sec2)
+        nonce = bytes.fromhex(the_test['nonce'])
+        conversation_key =the_test['conversation_key']
+        plain_text = the_test['plaintext']
+        payload = the_test['payload']
+
+        my_enc = NIP44Encrypt(Keys(sec1))
+
+        # test we get the same conversation key
+        my_conv_k = my_enc._get_conversation_key(for_pub_k=k2.public_key_hex()).hex()
+        print(f'expecting conversation key: {tail(conversation_key)} got {tail(my_conv_k)}')
+        assert my_conv_k == conversation_key
+
+        cacl_chacha_key, calc_chacha_nonce, calc_hmac_key = my_enc._get_message_key(
+            conversion_key=bytes.fromhex(my_conv_k),
+            nonce=nonce)
+
+        padded = NIP44Encrypt._pad(plain_text)
+
+        chacha_key, chacha_nonce, hmac_key = my_enc._get_message_key(conversion_key=bytes.fromhex(conversation_key),
+                                                                     nonce=nonce)
+
+        # test encrypts as expected...
+        cipher_text = my_enc._do_encrypt(padded_data=padded,
+                                         key=chacha_key,
+                                         nonce=chacha_nonce)
+
+        calc_payload = my_enc._make_payload(cipher_text=cipher_text,
+                                            hmac_key=hmac_key,
+                                            nonce=nonce,
+                                            version=2)
+
+        print(f'expected payload: {tail(payload)} got {tail(calc_payload)}')
+        assert calc_payload == payload
+
+        # now we check decrypting payload using k2 = plain text
+        calc_plain_text = NIP44Encrypt(k2).decrypt(payload=calc_payload,
+                                                   for_pub_k=k1.public_key_hex())
+
+        print(f'expected plain_text: {tail(plain_text)} got {tail(calc_plain_text)}')
+        assert calc_plain_text == plain_text
+
 
 
     def _do_valid_tests(test_json):
@@ -112,6 +156,15 @@ def test_file():
                 for tn in range(0, n_tests):
                     _test_message_keys(the_tests[tn], conversation_key)
                     print(f'{tn + 1} of {n_tests} OK')
+            elif test_name == 'encrypt_decrypt':
+                the_tests = test_json[test_name]
+                print(f'doing encrypt_decrypt key tests')
+                n_tests = len(the_tests)
+                for tn in range(0, n_tests):
+                    _test_do_encrypt_decrypt(the_tests[tn])
+
+                    # _test_message_keys(the_tests[tn], conversation_key)
+                    print(f'{tn + 1} of {n_tests} OK')
 
     """
         open the file, we interested in the v2/valid and v2/invalid sections
@@ -127,6 +180,6 @@ def test_file():
                     _do_valid_tests(nip44_tests[c_item][test_type])
 
 if __name__ == '__main__':
-    # asyncio.run(make_nip44_event())
+    # asyncio.run(nip44_encrypt_payload('some test'))
     test_file()
 

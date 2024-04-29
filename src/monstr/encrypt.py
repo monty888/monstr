@@ -307,6 +307,11 @@ class NIP44Encrypt:
     NIP44_PAD_MIN = 1
     NIP44_PAD_MAX = 65535
 
+    # we only support v2 which is sha256 hash and this hash
+    # and mostly funcs are hard coded currently to use these
+    V2_HASH = sha256
+    V2_SALT = b'nip44-v2'
+
     def __init__(self, key: Keys | str):
         if isinstance(key, str):
             key = Keys(priv_k=key)
@@ -316,10 +321,6 @@ class NIP44Encrypt:
 
         self._keys = key
         self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._keys.private_key_hex()))
-
-        # we only support v2 which is sha256 hash and this *-v2 salt
-        self._nip44_hash_func = sha256
-        self._nip44_salt = b'nip44-v2'
 
     # hkdf functions taken and modified from https://en.wikipedia.org/wiki/HKDF 14/4/2024
     @staticmethod
@@ -345,8 +346,6 @@ class NIP44Encrypt:
 
     @staticmethod
     def _hmac_aad(key, message, aad, hash_function) -> bytes:
-        print('hmac_add', key.hex(), message.hex(), aad.hex())
-
         if len(aad) != 32:
             raise Exception('AAD associated data must be 32 bytes');
 
@@ -367,7 +366,7 @@ class NIP44Encrypt:
         if unpadded_len <= 32:
             return 32
         else:
-            return chunk * (floor((len - 1) / chunk) + 1)
+            return chunk * (floor((unpadded_len - 1) / chunk) + 1)
 
     @staticmethod
     def _pad(plaintext: str) -> bytes:
@@ -422,26 +421,26 @@ class NIP44Encrypt:
 
         return nonce, cipher_text, mac
 
-    def _nip44_get_conversation_key(self, for_pub_k: str) -> bytes:
+    def _get_conversation_key(self, for_pub_k: str) -> bytes:
         the_pub: secp256k1.PublicKey = secp256k1.PublicKey(pubkey=bytes.fromhex('02' + for_pub_k), raw=True)
 
         # Execute ECDH mult for shared key
         tweaked_key: secp256k1.PublicKey = the_pub.tweak_mul(self._priv_k.private_key)
 
-        return NIP44Encrypt._hkdf_extract(salt=self._nip44_salt,
+        return NIP44Encrypt._hkdf_extract(salt=NIP44Encrypt.V2_SALT,
                                           ikm=tweaked_key.serialize()[1:],
-                                          hash_function=self._nip44_hash_func)
+                                          hash_function=NIP44Encrypt.V2_HASH)
 
-
-    def _nip44_get_message_key(self, conversion_key: bytes, nonce: bytes) -> tuple[bytes, bytes, bytes]:
+    @staticmethod
+    def _get_message_key(conversion_key: bytes, nonce: bytes) -> tuple[bytes, bytes, bytes]:
 
         if len(nonce) != 32:
-            raise ValueError('_nip44_get_message_key nonce is not 32 bytes long')
+            raise ValueError('NIP44Encrypt:: _get_message_key nonce is not 32 bytes long')
 
         msg_key = NIP44Encrypt._hkdf_expand(prk=conversion_key,
                                             info=nonce,
                                             length=76,
-                                            hashfunction=self._nip44_hash_func)
+                                            hashfunction=NIP44Encrypt.V2_HASH)
 
         chacha_key = msg_key[0:32]
         chacha_nonce = msg_key[32:44]
@@ -455,30 +454,35 @@ class NIP44Encrypt:
                            nonce=nonce)
         return cha.encrypt(padded_data)
 
-    def encrypt(self, plain_text: str, to_pub_k: str, version=2) -> str:
+    @staticmethod
+    def _make_payload(cipher_text: bytes, hmac_key: bytes, nonce: bytes, version: int) -> str:
         if version != 2:
-            raise ValueError(f'nip44_encrypt unsupported version {version}')
+            raise ValueError(f'NIP44Encrypt: _make_payload unsupported version {version}')
 
-        con_key = self._nip44_get_conversation_key(for_pub_k=to_pub_k)
+        mac = NIP44Encrypt._hmac_aad(key=hmac_key,
+                                     message=cipher_text,
+                                     aad=nonce,
+                                     hash_function=NIP44Encrypt.V2_HASH)
+
+        payload = version.to_bytes(1, byteorder='big') + nonce + cipher_text + mac
+        return base64.b64encode(payload).decode('utf-8')
+
+    def encrypt(self, plain_text: str, to_pub_k: str, version: int = 2) -> str:
+        con_key = self._get_conversation_key(for_pub_k=to_pub_k)
         nonce = os.urandom(32)
 
-        chacha_key, chacha_nonce, hmac_key = self._nip44_get_message_key(conversion_key=con_key,
-                                                                         nonce=nonce)
+        chacha_key, chacha_nonce, hmac_key = self._get_message_key(conversion_key=con_key,
+                                                                   nonce=nonce)
 
         padded = self._pad(plain_text)
 
         cipher_text = NIP44Encrypt._do_encrypt(padded_data=padded,
                                                key=chacha_key,
                                                nonce=chacha_nonce)
-
-        mac = self._hmac_aad(key=hmac_key,
-                             message=cipher_text,
-                             aad=nonce,
-                             hash_function=self._nip44_hash_func)
-
-        payload = version.to_bytes(1,byteorder='big') + nonce + cipher_text + mac
-
-        return base64.b64encode(payload).decode('utf-8')
+        return self._make_payload(cipher_text=cipher_text,
+                                  hmac_key=hmac_key,
+                                  nonce=nonce,
+                                  version=version)
 
     @staticmethod
     def _do_decrypt(ciper_text: bytes, key: bytes, nonce: bytes) -> bytes:
@@ -486,18 +490,18 @@ class NIP44Encrypt:
                            nonce=nonce)
         return cha.decrypt(ciper_text)
 
-    def decrypt(self, payload: str, for_pub_k: str, version=2) -> str:
+    def decrypt(self, payload: str, for_pub_k: str) -> str:
         nonce, ciper_text, mac = self._decode_payload(payload)
 
-        con_key = self._nip44_get_conversation_key(for_pub_k)
+        con_key = self._get_conversation_key(for_pub_k)
 
-        chacha_key, chacha_nonce, hmac_key = self._nip44_get_message_key(conversion_key=con_key,
-                                                                         nonce=nonce)
+        chacha_key, chacha_nonce, hmac_key = self._get_message_key(conversion_key=con_key,
+                                                                   nonce=nonce)
 
         calculated_mac = NIP44Encrypt._hmac_aad(key=hmac_key,
                                                 message=ciper_text,
                                                 aad=nonce,
-                                                hash_function=self._nip44_hash_func)
+                                                hash_function=NIP44Encrypt.V2_HASH)
 
         if calculated_mac != mac:
             raise ValueError('invalid MAC')
