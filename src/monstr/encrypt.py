@@ -1,8 +1,8 @@
 """
     code to support encrpted notes using ECDH as NIP4
 """
-import encodings.utf_8
 import os
+from abc import ABC, abstractmethod
 from hashlib import sha256
 import hmac
 from math import floor, log2
@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 import secp256k1
 import bech32
 from enum import Enum
-from monstr.event.event import Event
+from monstr.event.event import Event, EventTags
 
 
 # TODO: sort something out about the different key formats....
@@ -61,7 +61,7 @@ class Keys:
     @staticmethod
     def is_hex_key(key:str):
         """
-            returns true if looks like valid hex string for monstr key its not possible to tell if priv/pub
+            returns true if looks like valid hex string for nonstr key its not possible to tell if priv/pub
         """
         ret = False
         if len(key) == 64:
@@ -171,7 +171,7 @@ class Keys:
         else:
             self._pub_k = Keys.hex_key(pub_k)
             if not self._pub_k:
-                raise Exception('pub_k does\'t look like a valid monstr key - %s' % pub_k)
+                raise Exception('pub_k does\'t look like a valid nonstr key - %s' % pub_k)
 
     def private_key_hex(self):
         return self._priv_k
@@ -208,40 +208,88 @@ class Keys:
         return '\n'.join(ret)
 
 
-class NIP4Encrypt:
+class Encrypter(ABC):
 
     def __init__(self, key: Keys | str):
         if isinstance(key, str):
             key = Keys(priv_k=key)
         if key.private_key_hex() is None:
-            raise ValueError('NIP4Encrypt:: a key that can sign is required')
+            raise ValueError(f'{self.__class__.__name__}::__init__ a key that can sign is required')
 
-        self._keys = key
-        self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._keys.private_key_hex()))
+        self._key = key
+        self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._key.private_key_hex()))
 
-        # self._priv_int = int(priv_k_hex, 16)
+    @abstractmethod
+    def encrypt(self, plain_text: str, to_pub_k: str) -> str:
+        raise NotImplementedError
 
-        self._ec_key = ec.derive_private_key(int.from_bytes(self._priv_k.private_key,byteorder='big'), ec.SECP256K1())
+    @abstractmethod
+    def decrypt(self, payload: str, for_pub_k: str) -> str:
+        raise NotImplementedError
+
+    """
+        util methods for basic nostr messaging if encrypt and decrypt functions have been declared
+        (for basic 2 way event mesasge i.e use the p_tags)
+        both return new event:
+            encrypt_event, content encrypted and p_tags set (append your own p_tags after)
+            decrypt_event, content decrypted based on the p_tags
+    """
+    def encrypt_event(self, evt: Event, to_pub_k: str) -> Event:
+        if not Keys.is_valid_key(to_pub_k):
+            raise ValueError(f'{self.__class__.__name__}::encrypt_event invalid to_pub_k - {to_pub_k}')
+
+        ret = Event.from_JSON(evt.event_data())
+
+        # the pub_k author must be us
+        ret.pub_key = self._key.public_key_hex()
+        # change content to cipher_text
+        ret.content = self.encrypt(plain_text=evt.content,
+                                   to_pub_k=to_pub_k)
+
+        ret.tags = EventTags([
+            ['p', to_pub_k]
+        ])
+
+        return ret
+
+    def decrypt_event(self, evt: Event) -> Event:
+        pub_k = evt.pub_key
+        if pub_k == self._key.public_key_hex():
+            pub_k = evt.p_tags[0]
+
+        ret = Event.from_JSON(evt.event_data())
+        ret.content = self.decrypt(payload=evt.content,
+                                   for_pub_k=pub_k)
+        return ret
+
+
+class NIP4Encrypt(Encrypter):
+
+    def __init__(self, key: Keys | str):
+        super().__init__(key)
+
+        self._ec_key = ec.derive_private_key(int.from_bytes(self._priv_k.private_key,
+                                                            byteorder='big'), ec.SECP256K1())
 
         # shared key for priv/pub ECDH
         self._shared_keys = {}
 
-    def _get_derived_shared_key(self, to_pub_k: str):
+    def _get_derived_shared_key(self, for_pub_k: str):
         # first time we need to derive the shared key for us and the pub_k
-        if to_pub_k not in self._shared_keys:
+        if for_pub_k not in self._shared_keys:
             pk = secp256k1.PublicKey()
-            pk.deserialize(bytes.fromhex('02'+to_pub_k))
+            pk.deserialize(bytes.fromhex('02'+for_pub_k))
             ec_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), pk.serialize(False))
             shared_key = self._ec_key.exchange(ec.ECDH(), ec_key)
 
-            self._shared_keys[to_pub_k] = {
+            self._shared_keys[for_pub_k] = {
                 KeyEnc.BYTES: shared_key,
                 KeyEnc.HEX: shared_key.hex()
             }
 
-    def get_echd_key_hex(self, to_pub_k: str) -> str:
-        self._get_derived_shared_key(to_pub_k=to_pub_k)
-        return self._shared_keys[to_pub_k][KeyEnc.HEX]
+    def get_echd_key_hex(self, for_pub_k: str) -> str:
+        self._get_derived_shared_key(for_pub_k=for_pub_k)
+        return self._shared_keys[for_pub_k][KeyEnc.HEX]
 
     def _do_encrypt(self, plain_text: str, to_pub_k: str):
         data = bytes(plain_text.encode('utf8'))
@@ -266,8 +314,8 @@ class NIP4Encrypt:
         iv_env = base64.b64encode(crypt_message['iv'])
         return f'{enc_message.decode()}?iv={iv_env.decode()}'
 
-    def _do_decrypt(self, encrypted_data, iv, to_pub_k: str):
-        share_key = self.get_echd_key_hex(to_pub_k=to_pub_k)
+    def _do_decrypt(self, encrypted_data, iv, for_pub_k: str):
+        share_key = self.get_echd_key_hex(for_pub_k=for_pub_k)
 
         key = secp256k1.PrivateKey().deserialize(share_key)
         ciper = AES.new(key=key,
@@ -282,23 +330,10 @@ class NIP4Encrypt:
         iv = base64.b64decode(msg_split[1])
         return self._do_decrypt(encrypted_data=text,
                                 iv=iv,
-                                to_pub_k=for_pub_k).decode('utf8')
-
-    def decrypt_event(self, evt: Event) -> Event:
-        """
-            util method for decrypting basic nip4 encrypted events
-        """
-        pub_k = evt.pub_key
-        if pub_k == self._keys.private_key_hex():
-            pub_k = evt.p_tags[0]
-
-        ret = Event.from_JSON(evt.event_data())
-        ret.content = self.decrypt(payload=evt.content,
-                                   for_pub_k=pub_k)
-        return ret
+                                for_pub_k=for_pub_k).decode('utf8')
 
 
-class NIP44Encrypt:
+class NIP44Encrypt(Encrypter):
     """
         base functionality for implementing NIP44
         https://github.com/paulmillr/nip44
@@ -313,14 +348,7 @@ class NIP44Encrypt:
     V2_SALT = b'nip44-v2'
 
     def __init__(self, key: Keys | str):
-        if isinstance(key, str):
-            key = Keys(priv_k=key)
-
-        if key.private_key_hex() is None:
-            raise ValueError('NIP44Encrypt:: a key that can sign is required')
-
-        self._keys = key
-        self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._keys.private_key_hex()))
+        super().__init__(key)
 
     # hkdf functions taken and modified from https://en.wikipedia.org/wiki/HKDF 14/4/2024
     @staticmethod

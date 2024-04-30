@@ -4,6 +4,8 @@ import asyncio
 from monstr.encrypt import Keys, NIP44Encrypt
 from monstr.util import util_funcs
 from monstr.signing import SignerInterface, BasicKeySigner
+from monstr.event.event import Event
+from tests.nip4 import TEST_TEXTS
 
 tail = util_funcs.str_tails
 
@@ -260,6 +262,32 @@ def test_file():
                     _do_valid_tests(nip44_tests[c_item][test_type])
                 elif test_type == 'invalid':
                     _do_invalid_tests(nip44_tests[c_item][test_type])
+
+
+    """ 
+        extra test using Encrypter.encrypt_event and .decrypt_event util functions that
+        that NIP44Encrypt
+    """
+    print('test event based')
+    count = len(TEST_TEXTS)
+    # rnd gen so keys
+    enc_key = Keys()
+    to_key = Keys()
+
+    my_enc = NIP44Encrypt(enc_key)
+    for i, c_text in enumerate(TEST_TEXTS):
+
+        enc_evt = my_enc.encrypt_event(evt=Event(content=c_text),
+                                       to_pub_k=to_key.public_key_hex())
+
+        dec_evt = my_enc.decrypt_event(enc_evt)
+
+        # after enc/decode dec_evt.content should still == c_text
+        assert dec_evt.content == c_text
+
+        print(f'{i + 1} of {count} OK')
+
+
 if __name__ == '__main__':
     # asyncio.run(nip44_encrypt_payload('some test'))
     test_file()

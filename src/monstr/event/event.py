@@ -448,8 +448,13 @@ class Event:
         return self._tags
 
     @tags.setter
-    def tags(self, tags) -> EventTags:
-        self._tags = EventTags(tags)
+    def tags(self, tags):
+        # already a EventTags obj
+        if isinstance(tags, EventTags):
+            self._tags = tags
+        # should be [[]]
+        else:
+            self._tags = EventTags(tags)
 
     def get_tags(self, tag_name):
         return self._tags.get_tags(tag_name)
