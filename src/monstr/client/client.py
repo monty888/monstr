@@ -14,6 +14,7 @@ except:
     pass
 import asyncio
 import json
+from typing import Callable
 from json import JSONDecodeError
 from datetime import datetime, timedelta
 from monstr.util import util_funcs
@@ -281,7 +282,13 @@ class Client:
                     the_evt = Event.from_JSON(message[2])
                     for c_handler in the_sub['handlers']:
                         try:
-                            c_handler.do_event(self, sub_id, the_evt)
+
+                            if callable(c_handler):
+                                c_handler(self, sub_id, the_evt)
+                            # should be a class with do_event defined (e.g. extends client.event_handlers.EventHandler)
+                            else:
+                                c_handler.do_event(self, sub_id, the_evt)
+
                         except Exception as e:
                             logging.debug(f'Client::_do_events in handler {c_handler} - {e}')
 
@@ -1087,7 +1094,11 @@ class ClientPool:
             if sub_id in self._handlers:
                 for c_handler in self._handlers[sub_id]:
                     try:
-                        c_handler.do_event(client, sub_id, evt)
+                        if callable(c_handler):
+                            c_handler(client, sub_id, evt)
+                        # should be a class with do_event defined (e.g. extends client.event_handlers.EventHandler)
+                        else:
+                            c_handler.do_event(client, sub_id, evt)
                     except Exception as e:
                         logging.debug('ClientPool::do_event, problem in handler - %s' % e)
 

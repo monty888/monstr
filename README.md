@@ -2,11 +2,13 @@
 
 Monstr: Python Nostr module. Python code for working with nostr.
 
-* A basic relay implementation for testing against locally
-* Client for working with a single relay
-* ClientPool for working with multiple relays
+* A basic relay implementation that can be used for testing, and can be easily extended.
+* Client and ClientPool classes to manage access to one or multiple relays
 * Keys for working with and converting between hex/npub/nsec
+* Signer classes for abstacting use of keys so for example signing could be done via hardware
 * Entities for encoding and decoding NIP19 nostr entities
+* NIP4 and NIP44 implemented for payload encryption
+* inbox for wrapping events (TODO look into nip for gift wrapped events)
 
 # install
 ```sh
@@ -30,52 +32,152 @@ pip pip install wheel
 pip install psycopg2
 ```
 
-# test `monstr` package import
-```py
-# create a new python shell
-python3
->> import monstr
->> from monstr.encrypt import Keys
->> test = Keys()
->> Keys.is_valid_key(test.private_key_hex())
-True
->>
-```
-
-Note: developed against python 3.10.6
+Note: developed against python 3.10.12
 
 # use 
 
-### basic queries with context manager
+### keys
 ```python
+from monstr.encrypt import Keys
 
-    from monstr.client.client import Client
+# generate new keys
+k = Keys()
+
+# import existing keys, where key_str is nsec, npub or hex - assumed public
+k = Keys.get_key(key_str)
+
+# import existing hex private key
+k = Keys(priv_k=key_str)
+```
+
+
+
+### run local relay
+```python
+import asyncio
+import logging
+from monstr.relay.relay import Relay
+
+async def run_relay():
+    r = Relay()
+    await r.start()
+
+if __name__ == '__main__':
+    logging.getLogger().setLevel(logging.DEBUG)
+    asyncio.run(run_relay())
+```
+**_NOTE:_**  By default this relay will be running at ws://localhost:8080 and not storing events
+
+
+### make a post  
+
+To post to the above local relay. Normally you'd use ClientPool rather than a single relay directly.
+```python
+import asyncio
+import logging
+from monstr.client.client import Client, ClientPool
+from monstr.encrypt import Keys
+from monstr.event.event import Event
+
+
+async def do_post(url, text):
+    # rnd generate some keys
+    n_keys = Keys()
 
     async with Client(url) as c:
-        events = await c.query({
-            'limit': 100
-        })
+        n_msg = Event(kind=Event.KIND_TEXT_NOTE,
+                      content=text,
+                      pub_key=n_keys.public_key_hex())
+        n_msg.sign(n_keys.private_key_hex())
+        c.publish(n_msg)
+        # await asyncio.sleep(1)
 
-        for c_evt in events:
-            print(c_evt)
+if __name__ == "__main__":
+    logging.getLogger().setLevel(logging.DEBUG)
+    url = "ws://localhost:8080"
+    text = 'hello'
+
+    asyncio.run(do_post(url, text))
 ```
-### basic queries without context manager
+
+### listen for posts
+Listen to posts being made to the local relay above
 
 ```python
+import asyncio
+import logging
+import sys
+from monstr.client.client import Client, ClientPool
+import signal
+from monstr.encrypt import Keys
+from monstr.event.event import Event
+from monstr.util import util_funcs
 
-    from monstr.client.client import Client
+tail = util_funcs.str_tails
 
+
+async def listen_notes(url):
+    run = True
+
+    # so we get a clean exit on ctrl-c
+    def sigint_handler(signal, frame):
+        nonlocal run
+        run = False
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    # create the client and start it running
     c = Client(url)
     asyncio.create_task(c.run())
     await c.wait_connect()
-    events = await c.query({
-        'limit': 100
-    })
 
-    for c_evt in events:
-        print(c_evt)
-    c.end()
+    # just use func, you can also use a class that has a do_event
+    # with this method sig, e.g. extend monstr.client.EventHandler
+    def my_handler(the_client: Client, sub_id: str, evt: Event):
+        print(evt.created_at, tail(evt.content,30))
+
+    # start listening for events
+    c.subscribe(handlers=my_handler,
+                filters={
+                   'limit': 100
+                })
+
+    while run:
+        await asyncio.sleep(0.1)
+
+if __name__ == "__main__":
+    logging.getLogger().setLevel(logging.DEBUG)
+    url = "ws://localhost:8080"
+
+    asyncio.run(listen_notes(url))
 ```
+
+### using signer 
+TODO
+
+### NIP4 and NIP44 encryption
+
+TODO
+
+### NIP19 Entities
+
+```python
+from monstr.entities import Entities
+
+def show_entities():
+    # nip19 encoded profile
+    n_profile = 'nprofile1qqsrhuxx8l9ex335q7he0f09aej04zpazpl0ne2cgukyawd24mayt8gpp4mhxue69uhhytnc9e3k7mgpz4mhxue69uhkg6nzv9ejuumpv34kytnrdaksjlyr9p'
+
+    # extract data
+    decoded = Entities.decode(n_profile)
+    print(decoded)
+
+    # re-encode
+    print(Entities.encode('nprofile', decoded))
+
+if __name__ == "__main__":
+    show_entities()
+```
+
 
 ### further examples
 
