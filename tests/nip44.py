@@ -137,9 +137,66 @@ def test_file():
         print(f'expected plain_text: {tail(plain_text)} got {tail(calc_plain_text)}')
         assert calc_plain_text == plain_text
 
+    def _test_get_invalid_conversation_key(the_test):
+        success = False
+        print(f'checking for: {the_test["note"]}')
+        try:
+            sec1 = the_test['sec1']
+            k1 = Keys(sec1)
+            pub = the_test['pub2']
+            my_enc = NIP44Encrypt(Keys(sec1))
+            my_enc._get_conversation_key(pub)
+            # shouldn't get here....
+            success = True
+        except Exception as e:
+            pass
+
+        assert success is False
+
+    def _test_invalid_decrypt(the_test):
+        success = False
+        print(f'checking for: {the_test["note"]}')
+        try:
+            con_key = bytes.fromhex(the_test['conversation_key'])
+            nonce = bytes.fromhex(the_test['nonce'])
+            plaintext = the_test['plaintext']
+            payload = the_test['payload']
+            nonce, ciper_text, mac = NIP44Encrypt._decode_payload(payload)
+
+
+            chacha_key, chacha_nonce, hmac_key = NIP44Encrypt._get_message_key(conversion_key=con_key,
+                                                                               nonce=nonce)
+
+            calculated_mac = NIP44Encrypt._hmac_aad(key=hmac_key,
+                                                    message=ciper_text,
+                                                    aad=nonce,
+                                                    hash_function=NIP44Encrypt.V2_HASH)
+
+            if calculated_mac != mac:
+                raise ValueError('invalid MAC')
+
+            padded = NIP44Encrypt._do_decrypt(ciper_text=ciper_text,
+                                              key=chacha_key,
+                                              nonce=chacha_nonce)
+
+            plain_text = NIP44Encrypt._unpad(padded=padded)
+
+            # sec1 = the_test['sec1']
+            # k1 = Keys(sec1)
+            # pub = the_test['pub2']
+            # my_enc = NIP44Encrypt(Keys(sec1))
+            # my_enc._get_conversation_key(pub)
+            # shouldn't get here....
+            success = True
+        except Exception as e:
+            print(e)
+            pass
+
+        assert success is False
 
 
     def _do_valid_tests(test_json):
+        print('** valid tests **')
         for test_name in test_json:
             if test_name == 'get_conversation_key':
                 the_tests = test_json[test_name]
@@ -165,6 +222,29 @@ def test_file():
 
                     # _test_message_keys(the_tests[tn], conversation_key)
                     print(f'{tn + 1} of {n_tests} OK')
+            else:
+                print(f'no tests for {test_name}')
+
+    def _do_invalid_tests(test_json):
+        print('** invalid tests **')
+        for test_name in test_json:
+            if test_name == 'get_conversation_key':
+                the_tests = test_json[test_name]
+                print(f'doing conversation key tests')
+                n_tests = len(the_tests)
+                for tn in range(0, n_tests):
+                    _test_get_invalid_conversation_key(the_tests[tn])
+                    print(f'{tn + 1} of {n_tests} OK')
+            elif test_name == 'decrypt':
+                the_tests = test_json[test_name]
+                print(f'doing decrypt tests')
+                n_tests = len(the_tests)
+                for tn in range(0, n_tests):
+                    _test_invalid_decrypt(the_tests[tn])
+                    print(f'{tn + 1} of {n_tests} OK')
+
+            else:
+                print(f'no tests for {test_name}')
 
     """
         open the file, we interested in the v2/valid and v2/invalid sections
@@ -178,7 +258,8 @@ def test_file():
             for test_type in nip44_tests[c_item]:
                 if test_type == 'valid':
                     _do_valid_tests(nip44_tests[c_item][test_type])
-
+                elif test_type == 'invalid':
+                    _do_invalid_tests(nip44_tests[c_item][test_type])
 if __name__ == '__main__':
     # asyncio.run(nip44_encrypt_payload('some test'))
     test_file()
