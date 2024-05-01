@@ -72,7 +72,7 @@ if __name__ == '__main__':
 ### make a post  
 The following shows code to post note to the above local relay. Normally you'd use a ClientPool 
 rather than Client because it's normal to post to multiple relays. It should be possible to switch between 
-Client/ClientPool without any other changes in most case.
+Client/ClientPool without any other changes in most cases.
 The code shows:  
   - basic note post
   - NIP4 encrypt post or NIP44 with code change as comment
