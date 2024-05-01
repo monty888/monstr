@@ -544,7 +544,7 @@ class Event:
             ret = f'{self.id}@{self.created_at}'
         return ret
 
-    def add_pow(self, target: int = 4) -> 'Event':
+    def add_pow(self, target: int = 4):
         if target < 4 or target > 64:
             raise ValueError(f"target should be in range 4 to 64 got {target}")
 
