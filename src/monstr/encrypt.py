@@ -234,8 +234,10 @@ class Encrypter(ABC):
             encrypt_event, content encrypted and p_tags set (append your own p_tags after)
             decrypt_event, content decrypted based on the p_tags
     """
-    def encrypt_event(self, evt: Event, to_pub_k: str) -> Event:
-        if not Keys.is_valid_key(to_pub_k):
+    def encrypt_event(self, evt: Event, to_pub_k: str | Keys) -> Event:
+        if isinstance(to_pub_k, Keys):
+            to_pub_k = to_pub_k.public_key_hex()
+        elif not Keys.is_valid_key(to_pub_k):
             raise ValueError(f'{self.__class__.__name__}::encrypt_event invalid to_pub_k - {to_pub_k}')
 
         ret = Event.from_JSON(evt.event_data())

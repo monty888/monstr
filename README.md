@@ -76,20 +76,47 @@ To post to the above local relay. Normally you'd use ClientPool rather than a si
 import asyncio
 import logging
 from monstr.client.client import Client, ClientPool
-from monstr.encrypt import Keys
+from monstr.encrypt import Keys, NIP4Encrypt
 from monstr.event.event import Event
-
+from monstr.signing import BasicKeySigner
 
 async def do_post(url, text):
     # rnd generate some keys
     n_keys = Keys()
 
     async with Client(url) as c:
+        # basic kind one note 
         n_msg = Event(kind=Event.KIND_TEXT_NOTE,
                       content=text,
                       pub_key=n_keys.public_key_hex())
         n_msg.sign(n_keys.private_key_hex())
         c.publish(n_msg)
+        
+        # to encrypt in needs to be for someone, use these keys
+        to_k = Keys('nsec1znc5uy6e342rzn420l38q892qzmkvjz0hn836hhn8hl8wmkc670qp0lk9n')
+        
+        # kind 4 for nip4, nip44 has no set kind so will depend
+        n_msg.kind = Event.KIND_ENCRYPT
+        
+        # same nip4 encrypted
+        my_enc = NIP4Encrypt(n_keys)    # or NIP44Encrypt
+        # returns event we to_p_tag and content encrypted
+        n_msg = my_enc.encrypt_event(evt=n_msg,
+                                     to_pub_k=to_k)
+
+        n_msg.sign(n_keys.private_key_hex())
+        c.publish(n_msg)
+
+        # or using signer send text post - better this way
+        
+        my_signer = BasicKeySigner(key=Keys())
+
+        n_msg = Event(kind=Event.KIND_TEXT_NOTE,
+                      content=text,
+                      pub_key=await my_signer.get_public_key())
+
+        await my_signer.sign_event(n_msg)
+        
         # await asyncio.sleep(1)
 
 if __name__ == "__main__":
@@ -150,13 +177,6 @@ if __name__ == "__main__":
 
     asyncio.run(listen_notes(url))
 ```
-
-### using signer 
-TODO
-
-### NIP4 and NIP44 encryption
-
-TODO
 
 ### NIP19 Entities
 

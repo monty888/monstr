@@ -247,24 +247,6 @@ class Event:
 
         return ret
 
-    # @staticmethod
-    # def decrypt_nip4(evt: 'Event', keys: Keys, check_kind=True) -> 'Event':
-    #     """
-    #     returns a copy of evt but with the content decrypted as NIP4
-    #     better to use a signer obj
-    #     """
-    #     # make a copy
-    #     ret = Event.from_JSON(evt.event_data())
-    #     # now decrypt the content
-    #     pub_k = evt.pub_key
-    #     if pub_k == keys.public_key_hex():
-    #         pub_k = evt.p_tags[0]
-    #
-    #     ret.content = evt.decrypted_content(priv_key=keys.private_key_hex(),
-    #                                         pub_key=pub_k,
-    #                                         check_kind=check_kind)
-    #     return ret
-
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
         self._id = id
         self._sig = sig
@@ -281,7 +263,11 @@ class Event:
 
         self._pub_key = pub_key
 
-        self._tags = EventTags(tags)
+        if isinstance(tags, EventTags):
+            # TODO - change to copy instead of same obj?
+            self._tags = tags
+        else:
+            self._tags = EventTags(tags)
 
     def serialize(self):
         """
@@ -316,7 +302,7 @@ class Event:
 
             if you were doing we an existing event for some reason you'd need to change the pub_key
             as else the sig we give won't be as expected
-
+            Eventually it might be move this into signer and always exepct use of signer...
         """
         self._get_id()
 
@@ -521,41 +507,13 @@ class Event:
     def kind(self) -> int:
         return self._kind
 
+    @kind.setter
+    def kind(self, kind: int):
+        self._kind = kind
+
     @property
     def content(self) -> str:
         return self._content
-
-    # def decrypted_content(self, priv_key, pub_key, check_kind=True):
-    #     """
-    #     dycrypts a NIP04 encoded event...
-    #     :param priv_key:
-    #     :return:
-    #     """
-    #     if check_kind and self.kind not in (Event.KIND_ENCRYPT, Event.KIND_REPUBLISH):
-    #         raise Exception(f'attempt to decrypt non encrypted event {self.id}')
-    #
-    #     my_enc = NIP4Encrypt(key=priv_key)
-    #
-    #     try:
-    #         ret = my_enc.decrypt(self.content, for_pub_k=pub_key)
-    #
-    #     except Exception as e:
-    #         raise Exception('unable to decrypt event using given priv_k')
-    #
-    #     return ret
-
-    # def encrypt_content(self, priv_key, pub_key):
-    #     my_enc = SharedEncrypt(priv_key)
-    #     if len(pub_key) == 64:
-    #         pub_key = '02' + pub_key
-    #
-    #     my_enc.derive_shared_key(pub_key)
-    #
-    #     crypt_message = my_enc.encrypt_message(bytes(self.content.encode('utf8')))
-    #     enc_message = base64.b64encode(crypt_message['text'])
-    #     iv_env = base64.b64encode(crypt_message['iv'])
-    #
-    #     return '%s?iv=%s' % (enc_message.decode(), iv_env.decode())
 
     # FIXME:
     #  setters should probably invalidate the id and sig as they'll need to be done again,
