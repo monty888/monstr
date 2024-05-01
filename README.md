@@ -70,8 +70,13 @@ if __name__ == '__main__':
 
 
 ### make a post  
-
-To post to the above local relay. Normally you'd use ClientPool rather than a single relay directly.
+The following shows code to post note to the above local relay. Normally you'd use a ClientPool 
+rather than Client because it's normal to post to multiple relays. It should be possible to switch between 
+Client/ClientPool without any other changes in most case.
+The code shows:  
+  - basic note post
+  - NIP4 encrypt post or NIP44 with code change as comment
+  - basic note post using signer class
 ```python
 import asyncio
 import logging
@@ -99,7 +104,7 @@ async def do_post(url, text):
         n_msg.kind = Event.KIND_ENCRYPT
         
         # same nip4 encrypted
-        my_enc = NIP4Encrypt(n_keys)    # or NIP44Encrypt
+        my_enc = NIP4Encrypt(n_keys)    # or NIP44Encrypt(n_keys)
         # returns event we to_p_tag and content encrypted
         n_msg = my_enc.encrypt_event(evt=n_msg,
                                      to_pub_k=to_k)
