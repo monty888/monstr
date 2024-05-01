@@ -4,6 +4,7 @@ import logging
 from json import JSONDecodeError
 import secp256k1
 import hashlib
+from copy import copy
 from monstr.util import util_funcs
 
 
@@ -247,6 +248,24 @@ class Event:
 
         return ret
 
+    @staticmethod
+    def add_pow(evt: 'Event', target: int = 4) -> 'Event':
+        if target < 4 or target > 64:
+            raise ValueError(f"target should be in range 4 to 64 got {target}")
+
+        ret = Event.from_JSON(evt.event_data())
+        val = 0
+        leading_z = 0
+        original_tags = copy(e.tags.tags)
+        while leading_z < target:
+            new_tags = copy(original_tags)
+            new_tags.append(['nonce', f'{val}', f'{target}'])
+            ret.tags = new_tags
+            leading_z = (256 - int.from_bytes(bytes.fromhex(ret.id), 'big').bit_length())
+            val += 1
+
+        return ret
+
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
         self._id = id
         self._sig = sig
@@ -294,6 +313,11 @@ class Event:
         """
         evt_str = self.serialize()
         self._id = hashlib.sha256(evt_str.encode('utf-8')).hexdigest()
+
+    def _invalidate(self):
+        # should be called on any property set, as this will no longer be valid
+        self._id = None
+        self._sig = None
 
     def sign(self, priv_key):
         """
@@ -435,6 +459,7 @@ class Event:
 
     @tags.setter
     def tags(self, tags):
+        self._invalidate()
         # already a EventTags obj
         if isinstance(tags, EventTags):
             self._tags = tags
@@ -475,10 +500,13 @@ class Event:
 
     @pub_key.setter
     def pub_key(self, pub_key):
+        self._invalidate()
         self._pub_key = pub_key
 
     @property
     def id(self):
+        if self._id is None:
+            self._get_id()
         return self._id
 
     @property
@@ -492,10 +520,11 @@ class Event:
 
     @created_at.setter
     def created_at(self, dt):
+        self._invalidate()
         if dt is None or not isinstance(dt, (datetime, int)):
-            raise ValueError('Event::created_at: invalid value for created_at - %s' % dt)
+            raise ValueError(f'Event::created_at: invalid value for created_at - {dt}')
         elif isinstance(dt, datetime):
-            self._created_at = util_funcs.date_as_ticks(self._created_at)
+            self._created_at = util_funcs.date_as_ticks(dt)
         elif isinstance(dt, int):
             self._created_at = dt
 
@@ -509,17 +538,16 @@ class Event:
 
     @kind.setter
     def kind(self, kind: int):
+        self._invalidate()
         self._kind = kind
 
     @property
     def content(self) -> str:
         return self._content
 
-    # FIXME:
-    #  setters should probably invalidate the id and sig as they'll need to be done again,
-    #  though only important if going to post
     @content.setter
     def content(self, content):
+        self._invalidate()
         self._content = content
 
     @property
@@ -528,8 +556,9 @@ class Event:
 
     def __str__(self):
         ret = super(Event, self).__str__()
-        # on signed events we can retrn something more useful
-        if self.id:
-            ret =  '%s@%s' % (self.id, self.created_at)
+        # hopefully id is set but it might not be if the event is being prepeped
+        # perhaps we should check pubkey here instead because if that exists we can gen the id
+        if self._id is not None:
+            ret = f'{self.id}@{self.created_at}'
         return ret
 
