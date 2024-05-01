@@ -248,24 +248,6 @@ class Event:
 
         return ret
 
-    @staticmethod
-    def add_pow(evt: 'Event', target: int = 4) -> 'Event':
-        if target < 4 or target > 64:
-            raise ValueError(f"target should be in range 4 to 64 got {target}")
-
-        ret = Event.from_JSON(evt.event_data())
-        val = 0
-        leading_z = 0
-        original_tags = copy(e.tags.tags)
-        while leading_z < target:
-            new_tags = copy(original_tags)
-            new_tags.append(['nonce', f'{val}', f'{target}'])
-            ret.tags = new_tags
-            leading_z = (256 - int.from_bytes(bytes.fromhex(ret.id), 'big').bit_length())
-            val += 1
-
-        return ret
-
     def __init__(self, id=None, sig=None, kind=None, content=None, tags=None, pub_key=None, created_at=None):
         self._id = id
         self._sig = sig
@@ -561,4 +543,18 @@ class Event:
         if self._id is not None:
             ret = f'{self.id}@{self.created_at}'
         return ret
+
+    def add_pow(self, target: int = 4) -> 'Event':
+        if target < 4 or target > 64:
+            raise ValueError(f"target should be in range 4 to 64 got {target}")
+
+        val = 0
+        leading_z = 0
+        original_tags = copy(self.tags.tags)
+        while leading_z < target:
+            new_tags = copy(original_tags)
+            new_tags.append(['nonce', f'{val}', f'{target}'])
+            self.tags = new_tags
+            leading_z = (256 - int.from_bytes(bytes.fromhex(self.id), 'big').bit_length())
+            val += 1
 
