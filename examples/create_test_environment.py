@@ -16,11 +16,14 @@ from monstr.util import util_funcs
 from aiohttp import web
 from pathlib import Path
 
+COPY_RELAY = 'wss://nos.lol'
+OUR_RELAY_URL = 'localhost'
+OUR_RELAY_PORT = 8080
 WORK_DIR = f'{Path.home()}/.nostrpy/'
 DB = f'{WORK_DIR}test_env.db'
 
 
-async def run_relay():
+async def run_relay(at_host, at_port):
 
     r = Relay(store=ARelaySQLiteEventStore(DB),
               max_sub=10)
@@ -31,9 +34,10 @@ async def run_relay():
         web.get('/view_profile', view_profile_route(r))
     ]
 
-    # await r.start_background(port=8888, routes=extra_routes)
-    await r.start(port=8888, routes=extra_routes, block=False)
-
+    await r.start(host=at_host,
+                  port=at_port,
+                  routes=extra_routes,
+                  block=False)
     return r
 
 
@@ -105,13 +109,10 @@ async def populate_events(evts, dest_url:str):
             print('waiting...')
             await asyncio.sleep(0.1)
 
-async def run(**kargs):
-    relay: Relay = await run_relay()
 
-    import_relay = 'wss://nostr-pub.wellorder.net'
-    if 'import_relay' in kargs:
-        import_relay = kargs['import_relay']
-
+async def run(import_relay, relay_host, relay_port, **kargs):
+    relay: Relay = await run_relay(at_host=relay_host,
+                                   at_port=relay_port)
 
     import_tasks = []
 
@@ -192,11 +193,11 @@ async def post_basic():
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
-    # import_relay = 'wss://nostr-pub.wellorder.net'
-    import_relay = 'wss://nos.lol'
     util_funcs.create_sqlite_store(DB)
 
-    asyncio.run(run(import_relay=import_relay,
+    asyncio.run(run(import_relay=COPY_RELAY,
+                    relay_host=OUR_RELAY_URL,
+                    relay_port=OUR_RELAY_PORT,
                     import_keys=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f'],
                     import_follows=['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']))
     # asyncio.run(relay_basic())

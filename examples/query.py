@@ -12,9 +12,9 @@ from monstr.ident.alias import ProfileFileAlias
 
 # defaults
 # working directory it'll be created it it doesn't exist
-WORK_DIR = '%s/.nostrpy/' % Path.home()
+WORK_DIR = f'{Path.home()}/.nostrpy/'
 #  relay to query
-DEFAULT_RELAY = 'ws://localhost:8888'
+DEFAULT_RELAY = 'ws://localhost:8080'
 # max time we'll wait for the query to complete
 DEFAULT_TIMEOUT = 10
 # limit on number of returned results

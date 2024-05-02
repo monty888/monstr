@@ -9,7 +9,7 @@ from monstr.util import util_funcs
 
 # default relay if not otherwise given
 # DEFAULT_RELAY = 'wss://nostr-pub.wellorder.net,wss://nos.lol'
-DEFAULT_RELAY = 'ws://localhost:8888'
+DEFAULT_RELAY = 'ws://localhost:8080'
 # DEFAULT_RELAY = 'wss://nos.lol'
 # bot account priv_k - to remove hardcode
 USE_KEY = 'nsec1fnyygyh57chwf7zhw3mwmrltc2hatfwn0hldtl4z5axv4netkjlsy0u220'
@@ -42,6 +42,7 @@ class BotEventHandler(EventHandler):
         ]
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
+        print('see event')
         # replying to ourself would be bad! also call accept_event
         # to stop us replying mutiple times if we see the same event from different relays
         if evt.pub_key == self._as_user.public_key_hex() or \
@@ -67,14 +68,6 @@ class BotEventHandler(EventHandler):
 
         response_event.sign(self._as_user.private_key_hex())
         self._clients.publish(response_event)
-        if self._store:
-            # store the txt decrypted?
-            if evt.kind == Event.KIND_ENCRYPT:
-                evt.content = prompt_text
-                response_event.content = response_text
-
-            asyncio.create_task(self._store.put(prompt_evt=evt,
-                                                reply_evt=response_event))
 
     def get_response_text(self, the_event):
         # possible parse this text also before passing onm
@@ -114,15 +107,14 @@ async def main(args):
                              filters={
                                  'kinds': [Event.KIND_ENCRYPT,
                                            Event.KIND_TEXT_NOTE],
-                                 '#p': [as_user.public_key_hex()],
+                                 # '#p': [as_user.public_key_hex()],
                                  'since': util_funcs.date_as_ticks(datetime.now())
                              })
     # add the on_connect
     my_clients.set_on_connect(on_connect)
 
     # start the clients
-    print('monitoring for events from or to account %s on relays %s' % (as_user.public_key_hex(),
-                                                                        relays))
+    print(f'monitoring for events from or to account {as_user.public_key_bech32()} on relays {relays}')
     await my_clients.run()
 
 

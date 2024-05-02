@@ -14,7 +14,7 @@ from monstr.util import util_funcs
 from monstr.encrypt import Keys
 
 
-async def get_notes(for_key, relay='ws://localhost:8888/'):
+async def get_notes(for_key, relay='ws://localhost:8080/'):
     print('getting text(1) kind notes for key: %s from %s' % (for_key,
                                                               relay))
 

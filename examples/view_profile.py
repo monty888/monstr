@@ -53,18 +53,20 @@ class MetaServer:
 
         k = Keys.get_key(pub_k)
         if k is None:
-            raise ServerError('%s - doesn\'t look like a nonstr key' % pub_k)
+            raise ServerError(f'{pub_k} - doesn\'t look like a nonstr key')
 
+        pub_k = k.public_key_hex()
         ret = {
             'pub_k': pub_k,
             'error': 'not found'
         }
-        p = await self._my_peh.get_profile(pub_k)
+
+        p = await self._my_peh.aget_profile(pub_k)
         if p:
             ret = p.as_dict()
         return web.json_response(ret)
 
-    async def start(self, host='localhost', port=8080):
+    async def start(self, host='localhost', port=8081):
         logging.debug('started web server at %s port=%s' % (host, port))
         await self._runner.setup()
         site = web.TCPSite(self._runner,
@@ -99,7 +101,7 @@ async def start_server(relays):
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
     # relays = ['wss://nostr-pub.wellorder.net']
-    relays= ['ws://localhost:8888']
+    relays= ['ws://localhost:8080']
     args = sys.argv[1:]
     if args:
         relays = args[0].split(',')

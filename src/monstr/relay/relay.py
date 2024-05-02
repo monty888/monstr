@@ -76,7 +76,7 @@ class Relay:
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE', 'AUTH']
 
     def __init__(self,
-                 store: RelayEventStoreInterface = None,
+                 store: RelayEventStoreInterface | ARelayEventStoreInterface = None,
                  accept_req_handler=None,
                  max_sub=10,
                  name: str = None,

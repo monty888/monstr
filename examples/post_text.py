@@ -13,7 +13,7 @@ from monstr.event.event import Event
 from monstr.util import ConfigError
 
 # default relay
-RELAY = 'ws://localhost:8888'
+RELAY = 'ws://localhost:8080'
 # default from user
 FROM_USER = None
 # default to user
@@ -89,7 +89,6 @@ async def prompt_post(args):
 
     print('type exit to quit')
     msg_n = ''
-
 
     def on_auth(the_client: Client, challenge: str):
         the_client.auth(as_user, challenge)
