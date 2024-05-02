@@ -558,3 +558,23 @@ class Event:
             leading_z = (256 - int.from_bytes(bytes.fromhex(self.id), 'big').bit_length())
             val += 1
 
+    @property
+    def pow(self):
+        # returns the events pow value - not necessarily targeted
+        return 256 - int.from_bytes(bytes.fromhex(self.id), 'big').bit_length()
+
+    def nip13_valid_pow(self, min_pow):
+        """
+            returns True if this event has valid targeted pow and that pow is >= min_pow
+            https://github.com/nostr-protocol/nips/blob/master/13.md
+            NOTE you also need to check if the event is valid!
+        """
+        ret = False
+        pow_value = self.pow
+        try:
+            nonce = self.get_tags('nonce')[0][1]
+            target_pow = int(nonce)
+            ret = pow_value >= target_pow >= min_pow
+        except Exception as e:
+            pass
+        return ret

@@ -7,6 +7,15 @@ from monstr.encrypt import NIP44Encrypt, NIP4Encrypt
 
 class SignerInterface(ABC):
 
+    async def ready_post(self, evt: Event) -> Event:
+        """
+            util method that sets the pub_k and signs for this signer at which point it should be ok
+            to post
+        """
+        evt.pub_key = await self.get_public_key()
+        await self.sign_event(evt)
+        return evt
+
     @abstractmethod
     async def get_public_key(self) -> str:
         raise NotImplementedError

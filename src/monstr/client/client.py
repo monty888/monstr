@@ -5,7 +5,7 @@
 
 """
 from __future__ import annotations
-from typing import Callable
+# from typing import Callable
 import logging
 import aiohttp
 try:
@@ -16,10 +16,9 @@ import asyncio
 import json
 from typing import Callable
 from json import JSONDecodeError
-from datetime import datetime, timedelta
+from datetime import datetime
 from monstr.util import util_funcs
 from monstr.event.event import Event
-from monstr.encrypt import Keys
 from monstr.signing import SignerInterface
 
 

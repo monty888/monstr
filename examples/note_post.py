@@ -4,6 +4,7 @@ from monstr.client.client import Client, ClientPool
 from monstr.encrypt import Keys
 from monstr.event.event import Event
 
+
 async def do_post(url, text):
     """
         Example showing how to post a text note (Kind 1) to relay

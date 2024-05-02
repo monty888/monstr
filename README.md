@@ -116,11 +116,8 @@ async def do_post(url, text):
         
         my_signer = BasicKeySigner(key=Keys())
 
-        n_msg = Event(kind=Event.KIND_TEXT_NOTE,
-                      content=text,
-                      pub_key=await my_signer.get_public_key())
-
-        await my_signer.sign_event(n_msg)
+        n_msg = await my_signer.ready_post(Event(kind=Event.KIND_TEXT_NOTE,
+                                                 content=text))
         c.publish(n_msg)
         
         # await asyncio.sleep(1)

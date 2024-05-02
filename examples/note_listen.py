@@ -27,7 +27,7 @@ async def listen_notes(url):
     # just use func, you can also use a class that has a do_event
     # with this method sig, e.g. extend monstr.client.EventHandler
     def my_handler(the_client: Client, sub_id: str, evt: Event):
-        print(evt.created_at, tail(evt.content,30))
+        print(evt.created_at, tail(evt.id), tail(evt.content, 30))
 
     # start listening for events
     c.subscribe(handlers=my_handler,
