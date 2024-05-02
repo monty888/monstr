@@ -84,6 +84,9 @@ class util_funcs:
                     print('error trying to create work sub director %s - %s' % (the_sub_dir, pe))
                     sys.exit(os.EX_CANTCREAT)
 
+
+
+
     @staticmethod
     def create_sqlite_store(db_file):
         from monstr.event.persist_sqlite import RelaySQLiteEventStore

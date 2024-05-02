@@ -17,7 +17,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 import secp256k1
 import bech32
 from enum import Enum
-from monstr.event.event import Event, EventTags
+
+import typing
+
+# required for encrypt_event, decrypt event... maybe these methods don't really belong here
+# or else keys should be in onw file/folder for encrypt?
+from monstr.event.event import Event
 
 
 # TODO: sort something out about the different key formats....
@@ -248,9 +253,7 @@ class Encrypter(ABC):
         ret.content = self.encrypt(plain_text=evt.content,
                                    to_pub_k=to_pub_k)
 
-        ret.tags = EventTags([
-            ['p', to_pub_k]
-        ])
+        ret.tags = [['p', to_pub_k]]
 
         return ret
 

@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from hashlib import sha256
-from monstr.event.event import Event
+from monstr.event.event import Event, EventTags
 from monstr.encrypt import Keys
-from monstr.encrypt import NIP44Encrypt, NIP4Encrypt
+from monstr.encrypt import NIP44Encrypt, NIP4Encrypt, Encrypter
 
 
 class SignerInterface(ABC):
@@ -71,6 +70,44 @@ class BasicKeySigner(SignerInterface):
 
         self._nip4_encrypt = NIP4Encrypt(key=self._keys)
         self._nip44_encrypt = NIP44Encrypt(key=self._keys)
+
+    """
+        util methods for basic nostr messaging if encrypt and decrypt functions have been declared
+        (for basic 2 way event mesasge i.e use the p_tags)
+        both return new event:
+            encrypt_event, content encrypted and p_tags set (append your own p_tags after)
+            decrypt_event, content decrypted based on the p_tags
+    """
+    def _encrypt_event(self, evt: Event, to_pub_k: str | Keys, enc: Encrypter) -> Event:
+        if isinstance(to_pub_k, Keys):
+            to_pub_k = to_pub_k.public_key_hex()
+        elif not Keys.is_valid_key(to_pub_k):
+            raise ValueError(f'{self.__class__.__name__}::encrypt_event invalid to_pub_k - {to_pub_k}')
+
+        ret = Event.from_JSON(evt.event_data())
+
+        # the pub_k author must be us
+        ret.pub_key = self._keys.public_key_hex()
+        # change content to cipher_text
+        ret.content = enc.encrypt(plain_text=evt.content,
+                                  to_pub_k=to_pub_k)
+
+        ret.tags = EventTags([
+            ['p', to_pub_k]
+        ])
+
+        return ret
+
+    def _decrypt_event(self, evt: Event, enc: Encrypter) -> Event:
+        pub_k = evt.pub_key
+        if pub_k == self._keys.public_key_hex():
+            pub_k = evt.p_tags[0]
+
+        ret = Event.from_JSON(evt.event_data())
+        ret.content = enc.decrypt(payload=evt.content,
+                                  for_pub_k=pub_k)
+        return ret
+
 
     async def get_public_key(self) -> str:
         return self._keys.public_key_hex()

@@ -19,21 +19,22 @@ async def listen_notes(url):
         run = False
     signal.signal(signal.SIGINT, sigint_handler)
 
-    # create the client and start it running
-    c = Client(url)
-    asyncio.create_task(c.run())
-    await c.wait_connect()
-
     # just use func, you can also use a class that has a do_event
     # with this method sig, e.g. extend monstr.client.EventHandler
     def my_handler(the_client: Client, sub_id: str, evt: Event):
         print(evt.created_at, tail(evt.id), tail(evt.content, 30))
 
-    # start listening for events
-    c.subscribe(handlers=my_handler,
-                filters={
-                   'limit': 100
-                })
+    def on_connect(the_client: Client):
+        # sub in onconnect so will re-sub if disconnect
+        the_client.subscribe(handlers=my_handler,
+                             filters={
+                                 'limit': 100
+                             })
+
+    # create the client and start it running
+    c = Client(url, on_connect=on_connect)
+    asyncio.create_task(c.run())
+    await c.wait_connect()
 
     while run:
         await asyncio.sleep(0.1)
