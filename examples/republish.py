@@ -33,6 +33,7 @@ async def do_republish():
         print('connected')
 
 
+
     def my_notice(the_client, msg):
         print(msg)
 

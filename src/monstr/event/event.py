@@ -201,7 +201,13 @@ class Event:
         :param evts:    events to be sorted either {} or Event
         :param reverse: True is newest first which is default
         :param inplace: act on evts or create new []
-        :return:
+        :return: sorted events
+
+        NOTE - if you're only working with events and inplace is fine you can just use standard python sort
+        i.e
+            evts = [Events]
+            evts.sort()
+
         """
         # sort events newest to oldest
         def sort_func(evt: Event):
@@ -578,3 +584,11 @@ class Event:
         except Exception as e:
             pass
         return ret
+
+    def __lt__(self, other: 'Event'):
+        # added so we can support basic sorting, newest events will be first
+        ret = True
+        if self.created_at_ticks < other.created_at_ticks:
+            ret = False
+        return ret
+

@@ -39,7 +39,7 @@ class util_funcs:
         return ret
 
     @staticmethod
-    def str_tails(the_str, taillen=4):
+    def str_tails(the_str, taillen=4, spacer='...'):
         # returns str start...end chars for taillen
         ret = '?...?'
 
@@ -47,7 +47,9 @@ class util_funcs:
             if len(the_str) < (taillen*2)+3:
                 ret = the_str
             else:
-                ret = '%s...%s' % (the_str[:taillen], the_str[len(the_str)-taillen:])
+                ret = (f'{the_str[:taillen]}'
+                       f'{spacer}'
+                       f'{the_str[len(the_str)-taillen:]}')
         return ret
 
     @staticmethod
