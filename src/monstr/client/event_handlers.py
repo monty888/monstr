@@ -19,7 +19,6 @@ import base64
 import logging
 import json
 from collections import OrderedDict
-from threading import BoundedSemaphore
 from monstr.encrypt import NIP4Encrypt
 from monstr.util import util_funcs
 from monstr.event.event import Event
@@ -137,8 +136,10 @@ class LengthAcceptor(EventAccepter):
 
 class EventHandler(ABC):
 
-    def __init__(self, event_acceptors: [EventAccepter] = []):
-        if not hasattr(event_acceptors, '__iter__'):
+    def __init__(self, event_acceptors: [EventAccepter] = None):
+        if event_acceptors is None:
+            event_acceptors = []
+        elif not hasattr(event_acceptors, '__iter__'):
             event_acceptors = [event_acceptors]
         self._event_acceptors = event_acceptors
 
@@ -227,12 +228,15 @@ class PrintEventHandler(EventHandler):
 class LastEventHandler(EventHandler):
     """
         use to keep track of the last time we received events for a given relay
+        if event_acceptors is given then only accepted events are used to update the time
     """
-    def __init__(self):
+    def __init__(self, event_acceptors: [EventAccepter] = None):
+        super().__init__(event_acceptors=event_acceptors)
         self._url_time_map = {}
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
-        self.set_now(the_client)
+        if self.accept_event(the_client, sub_id, evt):
+            self.set_now(the_client)
 
     def set_now(self, the_client):
         url = self._client_url(the_client)
@@ -303,16 +307,7 @@ class FileEventHandler:
         logging.debug('FileEventHandler::do_event event appended to file %s' % self._file_name)
 
 
-# class EventTimeHandler:
-#
-#     def __init__(self, callback=None):
-#         self._callback = callback
-#
-#     def do_event(self, the_client: Client, sub_id, evt: Event):
-#         self._callback(evt['created_at'])
-
-
-class RepostEventHandler:
+class RepostEventHandler(EventHandler):
     """
     reposts events seen  on to given Client/ClientPool object
     event size number of event ids to keep to prevent duplicates being sent out
@@ -322,15 +317,15 @@ class RepostEventHandler:
     to_client, TODO: define interface that both Client and ClientPool share and type hint with that
 
     """
-    def __init__(self, to_client, max_dedup=1000):
+    def __init__(self, to_client, max_dedup=1000, event_acceptors=None):
         self._to_client = to_client
         self._duplicates = OrderedDict()
         self._max_dedup = max_dedup
-        self._lock = BoundedSemaphore()
+        super().__init__(event_acceptors=event_acceptors)
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
         do_send = False
-        with self._lock:
+        if self.accept_event(the_client, sub_id, evt):
             if evt.id not in self._duplicates:
                 do_send = True
                 self._duplicates[evt.id] = True
@@ -339,4 +334,4 @@ class RepostEventHandler:
 
         if do_send:
             self._to_client.publish(evt)
-            print('RepostEventHandler::sent event %s to %s' % (evt, self._to_client))
+            print(f'RepostEventHandler::sent event {evt.id} to {self._to_client}')

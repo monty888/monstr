@@ -1,64 +1,56 @@
 """
-start of some code to rebroadcast events, it was actually written to rebroadcast an old contact event after
-contacts had been set empty by some client so is only written upto that currently but could easily be extended into
-a proper rebroadcaster
-
+    adds a subscription and then republish events seen on source relay to dest relay
+    could use ClientPool for dest/source if wanting to attach to mutiple
 """
-
 import logging
 import asyncio
 from datetime import datetime
-from pathlib import Path
-from monstr.event.persist import ClientSQLiteEventStore
-from monstr.event.event import Event
+from monstr.client.event_handlers import LastEventHandler, RepostEventHandler
 from monstr.client.client import Client
 from monstr.util import util_funcs
 
-WORK_DIR = '%s/.nostrpy/' % Path.home()
-DB = WORK_DIR+'test_env.db'
 
+SOURCE_URL = "wss://nos.lol"
+DEST_URL = "ws://localhost:8080"
+# events that we'll be republishing from the one relay to the other
+COPY_FILTER = {
+    'kinds': [1]
+}
 
 async def do_republish():
-    # get the events we want to replubish, here hardcode to store... this should be option
-    # could be from other relay, file or db etc.
-    # this events should alredy be signed
-    source_db = DB
-    my_store = ClientSQLiteEventStore(DB)
-    evts = my_store.get_filter({
-        'kinds': [Event.KIND_CONTACT_LIST],
-        'authors': ['5c4bf3e548683d61fb72be5f48c2dff0cf51901b9dd98ee8db178efe522e325f']
-    })
+    # attach to dest relay
+    dest_r = Client(relay_url=DEST_URL)
+    asyncio.create_task(dest_r.run())
 
-    def my_connect(the_client):
-        print('connected')
+    # keeps track of date of must recent event, if we drop connect will use this to set the since date
+    my_last = LastEventHandler()
 
+    # actually does the republish
+    my_repub = RepostEventHandler(to_client=dest_r)
+
+    since = util_funcs.date_as_ticks(datetime.now())
 
 
-    def my_notice(the_client, msg):
-        print(msg)
+    def on_connect(the_client: Client):
+        since = my_last.get_last_event_dt(the_client)
+        if since:
+            COPY_FILTER['since'] = since
 
-    def my_ok(the_client, evt_id, success, msg):
-        print(msg)
+        # start the subscription
+        the_client.subscribe(
+            handlers=[
+                my_last, my_repub
+            ],
+            filters=COPY_FILTER
+        )
 
     # now do the republishing...
-    async with Client(relay_url='wss://nostr-pub.wellorder.net',
-                      on_notice=my_notice,
-                      on_ok=my_ok,
-                      on_connect=my_connect) as c:
-        for c_evt in evts:
-            print('publishing %s' % c_evt)
-            c_evt = Event.from_JSON(c_evt)
+    async with Client(relay_url=SOURCE_URL,
+                      on_connect=on_connect) as source_r:
 
-            # the old event existed but had been replaced with empty contacts
-            # so we needed to up time and resign
-            c_evt.created_at = util_funcs.date_as_ticks(datetime.now())
-            # c_evt.sign()
-
-            c.publish(c_evt)
-
-    # hack, we should really register and look for oks from the client or similar
-    await asyncio.sleep(10)
-    print('done')
+        # wait forever
+        while True:
+            await asyncio.sleep(0.1)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)

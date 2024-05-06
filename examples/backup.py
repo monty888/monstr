@@ -106,5 +106,5 @@ async def do_backup():
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger().setLevel(logging.DEBUG)
     asyncio.run(do_backup())

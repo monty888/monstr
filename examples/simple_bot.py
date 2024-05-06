@@ -4,7 +4,7 @@ from datetime import datetime
 from monstr.client.client import Client, ClientPool
 from monstr.client.event_handlers import EventHandler,DeduplicateAcceptor
 from monstr.event.event import Event
-from monstr.encrypt import Keys
+from monstr.encrypt import Keys, NIP4Encrypt
 from monstr.util import util_funcs
 
 # default relay if not otherwise given
@@ -28,8 +28,14 @@ class BotEventHandler(EventHandler):
         self._as_user = as_user
         self._clients = clients
 
+        # to encrypt replies if nip4
+        self._nip4_enc = NIP4Encrypt(self._as_user)
+
         # track count times we replied to each p_pub_k
         self._replied = {}
+
+        # TODO - we should if check the events is for us in do_event or use an acceptor to do the same
+        # currently we're just relying on the filter being currect (and the relay ofcourse...)
         super().__init__(event_acceptors=[DeduplicateAcceptor()])
 
     def _make_reply_tags(self, src_evt: Event) -> []:
@@ -42,7 +48,6 @@ class BotEventHandler(EventHandler):
         ]
 
     def do_event(self, the_client: Client, sub_id, evt: Event):
-        print('see event')
         # replying to ourself would be bad! also call accept_event
         # to stop us replying mutiple times if we see the same event from different relays
         if evt.pub_key == self._as_user.public_key_hex() or \
@@ -63,18 +68,19 @@ class BotEventHandler(EventHandler):
         )
 
         if response_event.kind == Event.KIND_ENCRYPT:
-            response_event.content = response_event.encrypt_content(priv_key=self._as_user.private_key_hex(),
-                                                                    pub_key=evt.pub_key)
+            response_event = self._nip4_enc.encrypt_event(response_event,
+                                                          to_pub_k=evt.pub_key)
 
         response_event.sign(self._as_user.private_key_hex())
+
         self._clients.publish(response_event)
 
     def get_response_text(self, the_event):
         # possible parse this text also before passing onm
         prompt_text = the_event.content
         if the_event.kind == Event.KIND_ENCRYPT:
-            prompt_text = the_event.decrypted_content(priv_key=self._as_user.private_key_hex(),
-                                                      pub_key=the_event.pub_key)
+            prompt_text = self._nip4_enc.decrypt(payload=prompt_text,
+                                                 for_pub_k=the_event.pub_key)
 
         # do whatever to get the response
         pk = the_event.pub_key
@@ -107,7 +113,7 @@ async def main(args):
                              filters={
                                  'kinds': [Event.KIND_ENCRYPT,
                                            Event.KIND_TEXT_NOTE],
-                                 # '#p': [as_user.public_key_hex()],
+                                 '#p': [as_user.public_key_hex()],
                                  'since': util_funcs.date_as_ticks(datetime.now())
                              })
     # add the on_connect
