@@ -5,6 +5,8 @@
 
 """
 from __future__ import annotations
+
+import copy
 # from typing import Callable
 import logging
 import aiohttp
@@ -376,8 +378,9 @@ class Client:
             ])
         )
 
-    async def query(self, filters: object = [],
-                    do_event: object = None,
+    async def query(self,
+                    filters: object = None,
+                    do_event: callable = None,
                     timeout=None,
                     wait_connect=False,
                     **kargs) -> [Event]:
@@ -387,6 +390,7 @@ class Client:
         :rtype: object
         :param filters:
         :param do_event:
+        :param wait_connect:
         :return:
         """
         is_done = False
@@ -394,6 +398,13 @@ class Client:
         total_time = 0
 
 
+        # fix up filters
+        if filters is None:
+            filters = []
+        elif isinstance(filters, dict):
+            filters = [filters]
+
+        # use default timeout for client
         if timeout is None:
             timeout = self._query_timeout
 
@@ -431,6 +442,82 @@ class Client:
             total_time += sleep_time
 
         cleanup()
+        return ret
+
+    async def query_until(self,
+                          until_date: datetime | int,
+                          filters: object = None,
+                          do_event: callable = None,
+                          timeout=None,
+                          wait_connect=False,
+                          **kargs) -> [Event]:
+        """
+            query as above except that it'll scan back until until_date
+            it's possible that it might also be useful to scan forward but to keep thing simple backward only
+            (if you supply a since in the query it'll be back from that point)
+        """
+
+        # fix filters
+        if filters is None:
+            filters = []
+        elif isinstance(filters, dict):
+            filters = [filters]
+
+        # because we're going to mod
+        filters = copy.deepcopy(filters)
+
+        # make sure until_date is int
+        if isinstance(until_date, datetime):
+            until_date = util_funcs.date_as_ticks(until_date)
+
+        ret = []
+        done = False
+        old_event = None
+
+        while done is False:
+            c_evts = await self.query(filters)
+
+            # run out of events
+            if not c_evts:
+                done = True
+            else:
+                # events should be ordered from relay but just incase....
+                c_evts.sort()
+
+                # cut any events upto and including anylast old event if we had one
+                if old_event:
+                    for back_seek in range(0, len(c_evts)):
+                        # the cut off event - last oldest should be the newest in this set
+                        if c_evts[back_seek].id == old_event.id:
+                            # cut any events before we reach the id of last event
+                            c_evts = c_evts[back_seek + 1:]
+                            break
+
+                # if no events then we're done
+                if not c_evts:
+                    done = True
+                else:
+                    # set an oldest event for next query
+                    old_event = c_evts[len(c_evts) - 1]
+                    oldest_date = old_event.created_at_ticks
+
+                    # if oldest date is lest then until date then we'll query again
+                    if oldest_date < until_date:
+                        # all dates are valid to ret
+                        ret = ret + c_evts
+                        # mod each filter in base query to have an until date
+                        for c_f in filters:
+                            c_f['until'] = oldest_date
+
+                    # oldest date us after until, append only event before until date
+                    else:
+                        done = True
+                        for c_evt in c_evts:
+                            if c_evt.created_at_ticks < until_date:
+                                ret.append(c_evt)
+                            else:
+                                break
+
         return ret
 
     def subscribe(self, sub_id=None, handlers=None, filters={}, eose_func=None):
@@ -958,12 +1045,15 @@ class ClientPool:
     def have_sub(self, sub_id: str):
         return sub_id in self._handlers
 
-    async def query(self, filters=[],
-                    do_event=None,
-                    wait_connect=False,
-                    emulate_single=True,
-                    timeout=None,
-                    on_complete=None):
+    async def _query(self,
+                     filters: [] = None,
+                     do_event: callable = None,
+                     wait_connect: bool = False,
+                     emulate_single: bool = True,
+                     timeout: int = None,
+                     on_complete: callable = None,
+                     until_date: int = None
+                     ):
         """
         similar to the query func, if you don't supply a ret_func we try and act in the same way as a single
         client would but wait for all clients to return and merge results into a single result with duplicate
@@ -987,19 +1077,33 @@ class ClientPool:
         async def get_q(the_client: Client):
             nonlocal client_wait
             try:
-                ret[the_client.url] = await the_client.query(filters,
-                                                             do_event=do_event,
-                                                             wait_connect=wait_connect,
-                                                             timeout=timeout)
+                # no until date, only one query will be done and what we get might not be everything
+                # as the relay most likely applies limits event if we don't request
+                if until_date is None:
+                    ret[the_client.url] = await the_client.query(filters,
+                                                                 do_event=do_event,
+                                                                 wait_connect=wait_connect,
+                                                                 timeout=timeout)
+
+                # with an until date, we'll try and get all event suntil until date
+                # this most likely will be made of multiple fetches
+                else:
+                    ret[the_client.url] = await the_client.query_until(until_date=until_date,
+                                                                       filters=filters,
+                                                                       do_event=do_event,
+                                                                       wait_connect=wait_connect,
+                                                                       timeout=timeout)
+
                 # ret_func(the_client, the_client.query(filters, wait_connect=False))
             except QueryTimeoutException as toe:
-                logging.debug('ClientPool::query timout - %s ' % toe)
+                logging.debug(f'ClientPool::query timout - {toe}')
             except Exception as e:
-                logging.debug('ClientPool::query exception - %s' % e)
+                logging.debug(f'ClientPool::query exception - {e}')
             client_wait -= 1
 
+            # callback that the fetch has completed
             if client_wait == 0 and on_complete:
-                on_complete()
+                on_complete(Event.merge(*ret.values()))
 
         c_client: Client
         query_tasks = []
@@ -1015,6 +1119,43 @@ class ClientPool:
                 break
 
         return Event.merge(*ret.values())
+
+    def query(self,
+              filters: [] = None,
+              do_event: callable = None,
+              wait_connect: bool = False,
+              emulate_single: bool = True,
+              timeout: int = None,
+              on_complete: callable = None):
+
+        return self._query(filters=filters,
+                           do_event=do_event,
+                           wait_connect=wait_connect,
+                           emulate_single=emulate_single,
+                           timeout=timeout,
+                           on_complete=on_complete)
+
+    def query_until(self,
+                    until_date: datetime | int,
+                    filters: [] = None,
+                    do_event: callable = None,
+                    wait_connect: bool = False,
+                    emulate_single: bool = True,
+                    timeout: int = None,
+                    on_complete: callable = None):
+        """
+            query with backscan till until date, note if you set emulate_single False
+            then you'll probably want to supply an on_compete function
+        """
+
+        return self._query(until_date=until_date,
+                           filters=filters,
+                           do_event=do_event,
+                           wait_connect=wait_connect,
+                           emulate_single=emulate_single,
+                           timeout=timeout,
+                           on_complete=on_complete)
+
 
     def publish(self, evt: Event):
         logging.debug('ClientPool::publish - %s', evt.event_data())
