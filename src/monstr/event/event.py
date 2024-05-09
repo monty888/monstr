@@ -114,6 +114,11 @@ class Event:
     KIND_REACTION = 7
     # NIP 58 badges https://github.com/nostr-protocol/nips/pull/229
     KIND_BADGE = 8
+
+    # NIP59 seal and gift wrap as defined in  https://github.com/nostr-protocol/nips/blob/master/59.md
+    KIND_SEAL = 13
+    KIND_GIFT_WRAP = 1059
+
     # NIP 28 events for group chat
     # https://github.com/nostr-protocol/nips/blob/af6893145f9a4a63be3d90beffbcfd4d90e872ae/28.md
     KIND_CHANNEL_CREATE = 40
