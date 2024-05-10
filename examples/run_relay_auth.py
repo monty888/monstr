@@ -17,7 +17,7 @@ async def run_relay():
                               AuthenticatedAcceptor(ACCEPT_KEY.public_key_hex())])
 
     print(f'accepting posts from {ACCEPT_KEY.private_key_bech32()} only! else event will need pow of atleast {min_pow}')
-    r = Relay(request_auth=True,accept_req_handler=[my_acceptor])
+    r = Relay(request_auth=True, accept_req_handler=[my_acceptor])
     await r.start()
 
 if __name__ == '__main__':

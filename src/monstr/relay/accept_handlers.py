@@ -196,7 +196,7 @@ class POWAcceptor(AcceptReqHandler):
                            message=f'blocked: event does not have enough pow {evt_pow} - required {self._min_pow}')
 
 
-class ORAcceptor(AcceptReqHandler):
+class ORAcceptor(AcceptReqHandler, NIPSupport):
     """
         returns true if any of the given accept handlers don't error
     """
@@ -208,7 +208,23 @@ class ORAcceptor(AcceptReqHandler):
             acceptors = [acceptors]
         self._acceptors = acceptors
 
+
+        # extract nip support if any from acceptors
+        nips = set()
+        for c_accept in self._acceptors:
+            if isinstance(c_accept, NIPSupport):
+                nips.update(set(c_accept.supported_nips))
+
+        # currently only 22 and 42 this way so thats all we worry about
+        NIPSupport.__init__(
+            self,
+            nip22=22 in nips,
+            nip42=42 in nips
+        )
+        print(self.supported_nips)
         super().__init__(descriptive_msg)
+
+
 
     def accept_post(self, ws: http_websocket, evt: Event):
         accept = False
