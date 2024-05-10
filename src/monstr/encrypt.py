@@ -2,6 +2,7 @@
     code to support encrpted notes using ECDH as NIP4
 """
 import os
+import json
 from abc import ABC, abstractmethod
 from hashlib import sha256
 import hmac
@@ -13,7 +14,6 @@ from Crypto.Util.Padding import pad, unpad
 # unfortunately we need this both crypto libs to as PyCryptodome doesn't seem to support sep256k1
 # and cryptograpy.io doesn't have Chacha without the mac that we need for NIP44 as far as I could understand it
 from cryptography.hazmat.primitives.asymmetric import ec
-
 import secp256k1
 import bech32
 from enum import Enum
