@@ -91,13 +91,12 @@ async def prompt_post(args):
     msg_n = ''
 
     def on_auth(the_client: Client, challenge: str):
-        the_client.auth(as_user, challenge)
+        asyncio.create_task(the_client.auth(as_user, challenge))
 
     client = ClientPool(clients=relay,
                         on_auth=on_auth)
 
     asyncio.create_task(client.run())
-
 
 
     # exit cleanly on ctrl c
@@ -128,7 +127,7 @@ async def prompt_post(args):
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.ERROR)
+    logging.getLogger().setLevel(logging.DEBUG)
     try:
         print(asyncio.run(prompt_post(get_args())))
     except ConfigError as ce:

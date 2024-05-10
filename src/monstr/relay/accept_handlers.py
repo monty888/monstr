@@ -1,9 +1,9 @@
+import typing
 from datetime import datetime
 from aiohttp import http_websocket
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException, NostrNotAuthenticatedException
 from monstr.event.event import Event
 from monstr.util import util_funcs, NIPSupport
-
 
 
 class AcceptReqHandler:
@@ -177,6 +177,61 @@ class AuthenticatedAcceptor(AcceptReqHandler, NIPSupport):
             raise NostrNotAuthenticatedException(f'restricted: user {evt.pub_key} not yet authenticated')
 
 
-        return ret
+class POWAcceptor(AcceptReqHandler):
+    """
+        only accept posts with a min level of pow
+    """
+    def __init__(self,
+                 min_pow: int = 16,
+                 descriptive_msg=True):
+
+        self._min_pow = min_pow
+        super().__init__(descriptive_msg)
+
+    def accept_post(self, ws: http_websocket, evt: Event):
+        evt_pow = evt.pow
+        if evt_pow < self._min_pow:
+            self.raise_err(event=evt,
+                           success=False,
+                           message=f'blocked: event does not have enough pow {evt_pow} - required {self._min_pow}')
 
 
+class ORAcceptor(AcceptReqHandler):
+    """
+        returns true if any of the given accept handlers don't error
+    """
+    def __init__(self,
+                 acceptors: [AcceptReqHandler],
+                 descriptive_msg=True):
+
+        if not isinstance(acceptors, list):
+            acceptors = [acceptors]
+        self._acceptors = acceptors
+
+        super().__init__(descriptive_msg)
+
+    def accept_post(self, ws: http_websocket, evt: Event):
+        accept = False
+        last_exception = None
+        auth_exception = None
+
+        for c_accept in self._acceptors:
+            try:
+                c_accept.accept_post(ws, evt)
+                accept = True
+                break
+
+            except (NostrNoticeException,
+                    NostrCommandException) as e:
+                last_exception = e
+            except NostrNotAuthenticatedException as na:
+                auth_exception = na
+
+        # if no accepter passed we'll have to raise an error
+        if accept is False:
+            # auth takes priority so we can force an auth request
+            if auth_exception:
+                raise auth_exception
+            # otherwise raise the last exception
+            else:
+                raise last_exception

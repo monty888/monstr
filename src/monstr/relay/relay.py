@@ -148,11 +148,17 @@ class Relay:
             if isinstance(c_accept, NIPSupport):
                 nips.update(set(c_accept.supported_nips))
 
-        # maybe we should error our here, not request auth when we have acceptors that check auth means those acceptors
-        # will always fail!
+        # if request auth is false but we have requesters that are expecting nip42 then we'll bug out to be safe
         if not self._request_auth and 42 in nips:
-            logging.debug('Relay::__init__ request_auth is False but have acceptor that requires authentication!?')
-            nips.remove(42)
+            raise Exception('Relay::__init__ request_auth is False but have acceptor that requires authentication!?')
+
+        # if request auth set nip42 True even if if we don't have acceptors using it... basically this means
+        # we'll send auth requests and auth clients but it's a little pointless because we never actually use that
+        # authentication
+        if request_auth:
+            nips.add(42)
+
+
 
         # output nip info - only named so may not be all...
         logging.info(f'Relay::__init__ maxsub={self._max_sub}, '

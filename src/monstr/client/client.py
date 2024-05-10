@@ -21,7 +21,8 @@ from json import JSONDecodeError
 from datetime import datetime
 from monstr.util import util_funcs
 from monstr.event.event import Event
-from monstr.signing import SignerInterface
+from monstr.signing import SignerInterface, BasicKeySigner
+from monstr.encrypt import Keys
 
 
 class QueryTimeoutException(Exception):
@@ -362,7 +363,11 @@ class Client:
                 ])
             )
 
-    async def auth(self, signer: SignerInterface, challenge: str):
+    async def auth(self, signer: SignerInterface | Keys, challenge: str):
+        # better to use signer but if we just got keys we'll turn into a BasicKeySigner
+        if isinstance(signer, Keys):
+            signer = BasicKeySigner(signer)
+
         auth_event = Event(kind=Event.KIND_AUTH,
                            tags=[
                                ['relay', self.url],
