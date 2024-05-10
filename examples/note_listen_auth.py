@@ -4,11 +4,18 @@ from monstr.client.client import Client
 import signal
 from monstr.event.event import Event
 from monstr.util import util_funcs
+from monstr.encrypt import Keys
 
+ACCEPT_KEY = Keys('nsec14wraxv90yphe9pkh0p84xh99h4ean86lk56lejf35886yjnvmpkqzqfwvy')
 tail = util_funcs.str_tails
 
 
 async def listen_notes(url):
+    """
+        as note_listen.py except we auth as ACCEPT_KEY
+        which means that when running with run_relay_auth_sub.py
+        we should see kind 4 dms and .....
+    """
     run = True
 
     # so we get a clean exit on ctrl-c
@@ -29,8 +36,13 @@ async def listen_notes(url):
                                  'limit': 100
                              })
 
+    def on_auth(the_client: Client, challenge: str):
+        asyncio.create_task(the_client.auth(ACCEPT_KEY, challenge))
+
     # create the client and start it running
-    c = Client(url, on_connect=on_connect)
+    c = Client(url,
+               on_connect=on_connect,
+               on_auth=on_auth)
     asyncio.create_task(c.run())
     await c.wait_connect()
 

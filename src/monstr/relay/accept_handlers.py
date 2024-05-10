@@ -1,4 +1,5 @@
-import typing
+import json
+from abc import ABC, abstractmethod
 from datetime import datetime
 from aiohttp import http_websocket
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException, NostrNotAuthenticatedException
@@ -6,7 +7,7 @@ from monstr.event.event import Event
 from monstr.util import util_funcs, NIPSupport
 
 
-class AcceptReqHandler:
+class AcceptReqHandler(ABC):
     """
         request handler for relay, a request handler just has to have
         accept_post(self, ws: WebSocket, evt: Event) method that throws
@@ -22,6 +23,27 @@ class AcceptReqHandler:
             raise NostrNoticeException('post not accepted')
 
     def accept_post(self, ws: http_websocket, evt: Event):
+        """
+            if this method isn't happy it should use raise_err otherwise the event will be accepted
+            so AcceptReqHandler() will accept anything
+        """
+        pass
+
+
+class SubscriptionFilter(ABC):
+    """
+        similar to AcceptRequestHandler but use when deciding if we'll send an event out
+        that has matched a filter
+        for example used to only restrict kind 4 DMs to only sender/reciever
+    """
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def send_event(self, ws: http_websocket, sub, evt: Event) -> bool:
+        """
+            this method should be implemented and return True or False if to send out this event
+        """
         pass
 
 
@@ -251,3 +273,38 @@ class ORAcceptor(AcceptReqHandler, NIPSupport):
             # otherwise raise the last exception
             else:
                 raise last_exception
+
+
+class RestrictDM(SubscriptionFilter):
+
+    def __init__(self, kinds: [int] = None):
+        super().__init__()
+        if kinds is None:
+            self._kinds = {Event.KIND_ENCRYPT, Event.KIND_GIFT_WRAP}
+        else:
+            if isinstance(kinds, int):
+                kinds = [int]
+            self._kinds = set(kinds)
+
+    def send_event(self, ws: http_websocket, sub, evt: dict) -> bool:
+        ret = False
+        if evt['kind'] in self._kinds:
+            # as we've now got to look at it turn the dict to an event obj as it'll make things easier
+            evt = Event.from_JSON(evt)
+
+            ps = set(evt.p_tags)
+            ps.add(evt.pub_key)
+
+            # who is authed on this ws
+            authed = ws.authenticated_pub_ks
+
+            for c_p in ps:
+                if c_p in authed:
+                    ret = True
+                    break
+
+            # TODO: if we failed raise auth error so we can get them to auth??
+            # if ret is False:
+            #     raise NostrNotAuthenticatedException()
+
+        return ret

@@ -12,7 +12,7 @@ from json import JSONDecodeError
 from monstr.event.event import Event
 from monstr.event.persist import RelayEventStoreInterface, ARelayEventStoreInterface
 from monstr.encrypt import Keys
-from monstr.relay.accept_handlers import AcceptReqHandler
+from monstr.relay.accept_handlers import AcceptReqHandler, SubscriptionFilter
 from monstr.relay.exceptions import NostrCommandException, NostrNoticeException, NostrNotAuthenticatedException
 from monstr.util import NIPSupport, util_funcs
 
@@ -77,7 +77,8 @@ class Relay:
 
     def __init__(self,
                  store: RelayEventStoreInterface | ARelayEventStoreInterface = None,
-                 accept_req_handler=None,
+                 accept_req_handler:[AcceptReqHandler] = None,
+                 sub_filter: [SubscriptionFilter] = None,
                  max_sub=10,
                  name: str = None,
                  description: str = None,
@@ -120,6 +121,12 @@ class Relay:
         # convert to array of only single class handed in
         if not hasattr(self._accept_req, '__iter__'):
             self._accept_req = [self._accept_req]
+
+        # sub filters are similar to accept filter accept they are applied before we send events that matched
+        # sub filters rather than before we accept and store event we recieve
+        self._sub_filters = sub_filter
+        if self._sub_filters is not None and not hasattr(self._sub_filters, '__iter__'):
+            self._sub_filters = [self._sub_filters]
 
         # this is the server that we run as, it's created after calling start()
         # default is localhost:8080
@@ -410,7 +417,7 @@ class Relay:
                 the_sub = self._ws[socket_id]['subs'][c_sub_id]
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
-                    n_task = asyncio.create_task(self._send_event(self._ws[socket_id]['ws'], c_sub_id, evt.event_data()))
+                    n_task = asyncio.create_task(self._send_event(self._ws[socket_id]['ws'], the_sub, evt.event_data()))
                     tasks.add(n_task)
                     n_task.add_done_callback(tasks.discard)
 
@@ -439,7 +446,7 @@ class Relay:
         if sub_count >= self._max_sub:
             raise NostrNoticeException('REQ new sub_id %s not allowed, already at max subs=%s' % (sub_id, self._max_sub))
 
-        self._ws[socket_id]['subs'][sub_id] = {
+        the_sub = self._ws[socket_id]['subs'][sub_id] = {
             'id': sub_id,
             'filter': filter
         }
@@ -455,7 +462,7 @@ class Relay:
                 evts = self._store.get_filter(filter)
 
         for c_evt in evts:
-            await self._send_event(ws, sub_id, c_evt)
+            await self._send_event(ws, the_sub, c_evt)
 
         await self._send_eose(ws, sub_id)
 
@@ -500,13 +507,25 @@ class Relay:
         except Exception as e:
             logging.info(f'Relay::_do_send error: {e}')
 
-    async def _send_event(self, ws: http_websocket, sub_id, evt):
-        await self._do_send(ws=ws,
-                            data=[
-                                'EVENT',
-                                sub_id,
-                                evt
-                            ])
+    async def _send_event(self, ws: http_websocket, the_sub, evt):
+        send_event = True
+        if self._sub_filters is not None:
+            for c_filter in self._sub_filters:
+                try:
+                    send_event = c_filter.send_event(ws, the_sub, evt)
+                # except NostrNotAuthenticatedException as ne:
+                #     raise ne
+                except Exception as e:
+                    logging.debug(f'Relay::_send_event error in _sub_filters, event will not be sent error {e})')
+                    send_event = False
+
+        if send_event:
+            await self._do_send(ws=ws,
+                                data=[
+                                    'EVENT',
+                                    the_sub['id'],
+                                    evt
+                                ])
 
     async def _send_eose(self, ws: http_websocket, sub_id):
         """
