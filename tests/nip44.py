@@ -1,11 +1,10 @@
 import json
 import os
-import asyncio
 from monstr.encrypt import Keys, NIP44Encrypt
 from monstr.util import util_funcs
 from monstr.signing import SignerInterface, BasicKeySigner
 from monstr.event.event import Event
-from tests.nip4 import TEST_TEXTS
+# from tests.nip4 import TEST_TEXTS
 
 tail = util_funcs.str_tails
 
@@ -269,13 +268,19 @@ def test_file():
         that NIP44Encrypt
     """
     print('test event based')
-    count = len(TEST_TEXTS)
+
+    test_file = 'test_texts.json'
+    with open(test_file, 'r') as f:
+        test_texts = json.load(f)
+
+    test_texts = test_texts['texts']
+    count = len(test_texts)
     # rnd gen so keys
     enc_key = Keys()
     to_key = Keys()
 
     my_enc = NIP44Encrypt(enc_key)
-    for i, c_text in enumerate(TEST_TEXTS):
+    for i, c_text in enumerate(test_texts):
 
         enc_evt = my_enc.encrypt_event(evt=Event(content=c_text),
                                        to_pub_k=to_key.public_key_hex())
