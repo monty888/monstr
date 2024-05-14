@@ -390,12 +390,12 @@ class NIP44Encrypt(Encrypter):
     def _calc_padded_len(unpadded_len):
         next_power = 32
         if unpadded_len > 1:
-            next_power = (floor(log2(unpadded_len - 1))) + 1
+            next_power = 1 << (floor(log2(unpadded_len - 1))) + 1
 
         if next_power <= 256:
             chunk = 32
         else:
-            chunk = next_power / 8
+            chunk = int(next_power / 8)
         if unpadded_len <= 32:
             return 32
         else:
@@ -412,19 +412,18 @@ class NIP44Encrypt(Encrypter):
         padded_length = NIP44Encrypt._calc_padded_len(unpadded_len)
 
         prefix = unpadded_len.to_bytes(length=2, byteorder='big', signed=False)
-        sufix = bytes(padded_length-unpadded_len)
+        sufix = bytes(padded_length - unpadded_len)
 
-        return prefix+plaintext+sufix
+        return prefix + plaintext + sufix
 
     @staticmethod
     def _unpad(padded: bytes) -> bytes:
         msg_len = int.from_bytes(padded[:2], byteorder='big')
-        ret = padded[2:msg_len+2]
+        ret = padded[2:msg_len + 2]
 
         if msg_len == 0 \
                 or len(ret) != msg_len \
-                or NIP44Encrypt._calc_padded_len(len(ret))+2 != len(padded):
-
+                or NIP44Encrypt._calc_padded_len(len(ret)) + 2 != len(padded):
             raise Exception('nip44 invalid padding')
 
         return ret

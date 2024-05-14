@@ -142,16 +142,10 @@ class Event:
     # user status events https://github.com/nostr-protocol/nips/blob/master/38.md
     KIND_USER_STATUS = 30315
 
-
     @staticmethod
     def from_JSON(evt_json):
-        """
-        TODO: add option to verify sig/eror if invalid?
-        creates an event object from json - at the moment this must be a full event, has id and has been signed,
-        may add option for presigned event in future
-        :param evt_json: json to create the event, as you'd recieve from subscription
-        :return:
-        """
+        # TODO: remove!!!! change to using load in place
+        # this was never really from json anway it's from dict
         return Event(
             id=evt_json['id'],
             sig=evt_json['sig'],
@@ -161,6 +155,65 @@ class Event:
             pub_key=evt_json['pubkey'],
             created_at=evt_json['created_at']
         )
+
+    @staticmethod
+    def load(event_data: str | dict, validate=False) -> 'Event':
+        """
+            return a Event object either from a dict or json str this replaces the old from_JSON method
+            that was actually just from a string...
+            if validate is set True will test the event sig, if it's not None will be returned
+
+        """
+        if isinstance(event_data, str):
+            try:
+                event_data = json.loads(event_data)
+            except Exception as e:
+                event_data = {}
+
+        id = None
+        if 'id' in event_data:
+            id = event_data['id']
+
+        sig = None
+        if 'sig' in event_data:
+            sig = event_data['sig'],
+
+        kind = None
+        if 'kind' in event_data:
+            kind = event_data['kind'],
+
+        content = None
+        if 'content' in  event_data:
+            content = event_data['content']
+
+        tags = None
+        if 'tags' in event_data:
+            tags = event_data['tags']
+
+        pub_key = None
+        if 'pubkey' in event_data:
+            pub_key = event_data['pubkey']
+
+        created_at = None
+        if 'created_at' in event_data:
+            created_at = event_data['created_at']
+
+        ret = Event(
+            id=id,
+            sig=sig,
+            kind=kind,
+            content=content,
+            tags=tags,
+            pub_key=pub_key,
+            created_at=created_at
+        )
+
+        # None ret if validating and the evnt is not valid
+        if validate is True and ret.is_valid() is False:
+            ret = None
+
+        return ret
+
 
     @staticmethod
     def is_event_id(event_id: str):

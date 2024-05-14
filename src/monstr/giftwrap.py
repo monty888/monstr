@@ -87,7 +87,7 @@ class GiftWrap:
 
     async def _unwrap(self, evt: Event) -> Event:
         wrapped_str = await self._signer.nip44_decrypt(evt.content, evt.pub_key)
-        return Event.from_JSON(json.loads(wrapped_str))
+        return Event.load(wrapped_str)
 
     async def unwrap(self, evt: Event):
         to_pub_k = evt.tags.get_tag_value_pos('p')
@@ -101,7 +101,6 @@ class GiftWrap:
 
         # unwrap the seal event
         seal_evt = await self._unwrap(evt)
-
         # unseal (unwrap again)
         rumour_evt = await self._unwrap(seal_evt)
         return rumour_evt
