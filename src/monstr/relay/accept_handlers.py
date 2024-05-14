@@ -290,7 +290,7 @@ class RestrictDM(SubscriptionFilter):
         ret = False
         if evt['kind'] in self._kinds:
             # as we've now got to look at it turn the dict to an event obj as it'll make things easier
-            evt = Event.from_JSON(evt)
+            evt = Event.load(evt)
 
             ps = set(evt.p_tags)
             ps.add(evt.pub_key)

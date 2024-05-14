@@ -71,7 +71,7 @@ class Channel:
     def as_dict(self):
         last_post = None
         if self._last_post:
-            last_post = self._last_post.event_data()
+            last_post = self._last_post.data()
 
         return {
             'id': self.event_id,

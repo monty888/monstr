@@ -54,7 +54,7 @@ async def listen_notes(url):
                              filters=[
                                 # can only get events for us from relays, we need to store are own posts
                                 {
-                                    'kinds': [1059],
+                                    'kinds': [Event.KIND_GIFT_WRAP],
                                     '#p': [my_k.public_key_hex()]
                                 }
                              ]
@@ -105,7 +105,6 @@ async def listen_notes(url):
 
 
         send_evt = Event(content=msg,
-                         kind=14,
                          tags=[
                              ['p', send_k.public_key_hex()]
                          ])
@@ -138,7 +137,7 @@ async def listen_notes(url):
     c.end()
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.ERROR)
     # url = ['wss://relay.0xchat.com','wss://relay.damus.io']
     # this relay seems to work the best with these kind of anon published events, atleast for now
     # others it seems to be a bit of hit and miss...

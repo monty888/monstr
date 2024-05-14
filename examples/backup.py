@@ -25,10 +25,12 @@ async def do_backup():
 
     # where we're storing, make a name from npub and current time
     f_name = f'npub{util_funcs.str_tails(FOR_NPUB[4:],spacer="_")}_{util_funcs.date_as_ticks(datetime.now())}'
+    full_file = f'{WORK_DIR}/{f_name}'
 
-    store = ARelaySQLiteEventStore(db_file=f'{WORK_DIR}/{f_name}')
+    store = ARelaySQLiteEventStore(db_file=full_file)
     await store.create()
 
+    count = 0
     async with Client(SOURCE_URL) as c:
 
         evts = await c.query_until(until_date=datetime.now(),
@@ -37,6 +39,8 @@ async def do_backup():
                                    })
 
         await store.add_event(evts)
+        count += len(evts)
+    print(f'backed up {count} events to {full_file}')
 
 
 if __name__ == "__main__":

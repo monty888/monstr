@@ -90,7 +90,7 @@ class Inbox:
             tags.append(['shared', shared_key])
 
         evt = Event(kind=self.kind,
-                    content=json.dumps(evt.event_data()),
+                    content=json.dumps(evt.data()),
                     pub_key=await self.pub_key,
                     tags=tags)
 
@@ -123,7 +123,7 @@ class Inbox:
                     content = await user_sign.nip4_decrypt(payload=evt.content,
                                                            for_pub_k=share_map[shared])
 
-                    ret = Event.from_JSON(json.loads(content))
+                    ret = Event.load(content)
                 except Exception as e:
                     pass
         # we'll just treat it as standard
@@ -131,7 +131,7 @@ class Inbox:
             try:
                 content = await self._signer.nip4_decrypt(payload=evt.content,
                                                           for_pub_k=await self.pub_key)
-                ret = Event.from_JSON(json.loads(content))
+                ret = Event.load(content)
             except Exception as e:
                 pass
         return ret

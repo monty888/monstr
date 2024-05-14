@@ -245,7 +245,7 @@ class Encrypter(ABC):
         elif not Keys.is_valid_key(to_pub_k):
             raise ValueError(f'{self.__class__.__name__}::encrypt_event invalid to_pub_k - {to_pub_k}')
 
-        ret = Event.from_JSON(evt.event_data())
+        ret = Event.load(evt.data())
 
         # the pub_k author must be us
         ret.pub_key = self._key.public_key_hex()
@@ -262,7 +262,7 @@ class Encrypter(ABC):
         if pub_k == self._key.public_key_hex():
             pub_k = evt.p_tags[0]
 
-        ret = Event.from_JSON(evt.event_data())
+        ret = Event.load(evt.data())
         ret.content = self.decrypt(payload=evt.content,
                                    for_pub_k=pub_k)
         return ret

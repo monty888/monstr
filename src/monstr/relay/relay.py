@@ -374,7 +374,7 @@ class Relay:
         if len(req_json) <= 1:
             raise NostrNoticeException('EVENT command missing event data')
 
-        evt = Event.from_JSON(req_json[1])
+        evt = Event.load(req_json[1])
         # check event sig matches pub_key
         if not evt.is_valid():
             raise NostrCommandException(event_id=evt.id,
@@ -417,7 +417,7 @@ class Relay:
                 the_sub = self._ws[socket_id]['subs'][c_sub_id]
                 # event passes sub filter
                 if evt.test(the_sub['filter']):
-                    n_task = asyncio.create_task(self._send_event(self._ws[socket_id]['ws'], the_sub, evt.event_data()))
+                    n_task = asyncio.create_task(self._send_event(self._ws[socket_id]['ws'], the_sub, evt.data()))
                     tasks.add(n_task)
                     n_task.add_done_callback(tasks.discard)
 
@@ -487,7 +487,7 @@ class Relay:
         if len(auth_json) <= 1:
             raise NostrNoticeException('AUTH command missing event data')
 
-        evt = Event.from_JSON(auth_json[1])
+        evt = Event.load(auth_json[1])
         if not evt.is_valid():
             raise NostrNoticeException('Authentication failed: auth event signature validation failed')
 
@@ -644,7 +644,7 @@ def view_profile_route(r: Relay):
             else:
                 evts = r.store.get_filter(filter)
 
-            evts = Event.latest_events_only([Event.from_JSON(c_evt) for c_evt in evts],
+            evts = Event.latest_events_only([Event.load(c_evt) for c_evt in evts],
                                             kind=Event.KIND_META)
 
 

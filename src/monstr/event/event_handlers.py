@@ -152,7 +152,7 @@ class StoreEventHandler(EventHandler):
 
                 r_evt['react_event'] = Event(id=r_id,
                                              content='unable to find reacted to event',
-                                             pub_key=pub_k).event_data()
+                                             pub_key=pub_k).data()
 
             # add interpretation
             interpretation = EventHandler.reaction_lookup(r_evt['content'])
@@ -341,7 +341,7 @@ class NetworkedStoreEventHandler(StoreEventHandler):
         def _do_event(the_client: Client, sub_id: str, evts):
             nonlocal ret
             relay = the_client.url
-            ret[relay] = [c_evt.event_data() for c_evt in evts]
+            ret[relay] = [c_evt.data() for c_evt in evts]
             c_evt: Event
             self.do_event(sub_id, evts, relay)
             if self._on_fetch:

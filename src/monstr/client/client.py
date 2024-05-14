@@ -359,10 +359,10 @@ class Client:
 
     def publish(self, evt: Event):
         if self._write:
-            logging.debug('Client::publish - %s', evt.event_data())
+            logging.debug('Client::publish - %s', evt.data())
             self._publish_q.put_nowait(
                 json.dumps([
-                    'EVENT', evt.event_data()
+                    'EVENT', evt.data()
                 ])
             )
 
@@ -382,7 +382,7 @@ class Client:
 
         self._publish_q.put_nowait(
             json.dumps([
-                'AUTH', auth_event.event_data()
+                'AUTH', auth_event.data()
             ])
         )
 
@@ -548,7 +548,7 @@ class Client:
         the_req = the_req + filters
 
         the_req = json.dumps(the_req)
-        logging.debug('Client::subscribe - %s', the_req)
+        logging.debug(f'Client::subscribe - {the_req}')
 
         # make sure handler is list
         if handlers is None:
@@ -1166,7 +1166,7 @@ class ClientPool:
 
 
     def publish(self, evt: Event):
-        logging.debug('ClientPool::publish - %s', evt.event_data())
+        logging.debug(f'ClientPool::publish - {evt.data()}')
         c_client: Client
 
         for c_client in self:

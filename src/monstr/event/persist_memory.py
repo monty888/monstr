@@ -99,7 +99,7 @@ class MemoryEventStore(EventStoreInterface, StoreNIPSupport):
         def _updated_sort(evt_data):
             return evt_data['created_at']
 
-        ret = [c_evt.event_data() for c_evt in ret]
+        ret = [c_evt.data() for c_evt in ret]
         if self._sort_direction != SortDirection.natural:
             ret.sort(key=_updated_sort, reverse=self._sort_direction==SortDirection.newest_first)
 

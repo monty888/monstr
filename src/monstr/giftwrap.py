@@ -32,9 +32,10 @@ class GiftWrap:
             end it's seralised with these val
         """
 
-        event_data = evt.event_data()
+        event_data = evt.data()
         event_data['sig'] = None
         event_data['pubkey'] = await self._signer.get_public_key()
+        event_data['kind'] = Event.KIND_RUMOUR
 
         ret = Event.load(event_data)
         # this forces the id, oxchat didn't see the events without this
@@ -53,7 +54,7 @@ class GiftWrap:
             to_pub_k = to_pub_k.public_key_hex()
 
         ret = Event(kind=Event.KIND_SEAL,
-                    content=await self._signer.nip44_encrypt(plain_text=json.dumps(rumour_evt.event_data()),
+                    content=await self._signer.nip44_encrypt(plain_text=json.dumps(rumour_evt.data()),
                                                              to_pub_k=to_pub_k),
                     created_at=self.get_jittered_created_ticks(),
                     pub_key=await self._signer.get_public_key(),
@@ -75,7 +76,7 @@ class GiftWrap:
         ret = Event(kind=Event.KIND_GIFT_WRAP,
                     pub_key=rnd_k.public_key_hex(),
                     created_at=self.get_jittered_created_ticks(),
-                    content=await rnd_sign.nip44_encrypt(plain_text=json.dumps(sealed_evt.event_data()),
+                    content=await rnd_sign.nip44_encrypt(plain_text=json.dumps(sealed_evt.data()),
                                                          to_pub_k=to_pub_k),
                     tags=[
                         ['p', to_pub_k]

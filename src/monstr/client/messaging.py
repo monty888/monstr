@@ -130,7 +130,7 @@ class MessageThreads:
         if msg_evt.kind == Event.KIND_ENCRYPT:
             # we keep in memory unecrypted, probably we should decrypt at the point
             # we're outputing to screen
-            msg_copy = Event.create_from_JSON(msg_evt.event_data())
+            msg_copy = Event.load(msg_evt.data())
             try:
 
                 msg_copy.content = msg_evt.decrypted_content(self._from.private_key, to_id)

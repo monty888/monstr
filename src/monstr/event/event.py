@@ -117,6 +117,7 @@ class Event:
 
     # NIP59 seal and gift wrap as defined in  https://github.com/nostr-protocol/nips/blob/master/59.md
     KIND_SEAL = 13
+    KIND_RUMOUR = 14
     KIND_GIFT_WRAP = 1059
 
     # NIP 28 events for group chat
@@ -142,19 +143,19 @@ class Event:
     # user status events https://github.com/nostr-protocol/nips/blob/master/38.md
     KIND_USER_STATUS = 30315
 
-    @staticmethod
-    def from_JSON(evt_json):
-        # TODO: remove!!!! change to using load in place
-        # this was never really from json anway it's from dict
-        return Event(
-            id=evt_json['id'],
-            sig=evt_json['sig'],
-            kind=evt_json['kind'],
-            content=evt_json['content'],
-            tags=evt_json['tags'],
-            pub_key=evt_json['pubkey'],
-            created_at=evt_json['created_at']
-        )
+    # @staticmethod
+    # def from_JSON(evt_json):
+    #     # TODO: remove!!!! change to using load in place
+    #     # this was never really from json anway it's from dict
+    #     return Event(
+    #         id=evt_json['id'],
+    #         sig=evt_json['sig'],
+    #         kind=evt_json['kind'],
+    #         content=evt_json['content'],
+    #         tags=evt_json['tags'],
+    #         pub_key=evt_json['pubkey'],
+    #         created_at=evt_json['created_at']
+    #     )
 
     @staticmethod
     def load(event_data: str | dict, validate=False) -> 'Event':
@@ -399,7 +400,7 @@ class Event:
 
         return ret
 
-    def event_data(self):
+    def data(self):
         return {
             'id': self._id,
             'pubkey': self._pub_key,
