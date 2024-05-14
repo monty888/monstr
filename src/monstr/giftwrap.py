@@ -32,11 +32,13 @@ class GiftWrap:
             end it's seralised with these val
         """
 
-        evt_json = evt.event_data()
-        evt_json['sig'] = None
-        evt_json['pubkey'] = await self._signer.get_public_key()
+        event_data = evt.event_data()
+        event_data['sig'] = None
+        event_data['pubkey'] = await self._signer.get_public_key()
 
-        ret = Event.from_JSON(evt_json)
+        ret = Event.load(event_data)
+        # this forces the id, oxchat didn't see the events without this
+        ret.id
         # forces id to be calculated
         return ret
 
@@ -44,7 +46,7 @@ class GiftWrap:
                          rumour_evt: Event,
                          to_pub_k: Keys | str) -> Event:
 
-        if rumour_evt.sig is not None:
+        if rumour_evt.sig:
             raise GiftWrapException('GiftWrap::_make_seal: rumour event should not be signed!')
 
         if isinstance(to_pub_k, Keys):

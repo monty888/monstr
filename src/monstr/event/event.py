@@ -176,11 +176,11 @@ class Event:
 
         sig = None
         if 'sig' in event_data:
-            sig = event_data['sig'],
+            sig = event_data['sig']
 
         kind = None
         if 'kind' in event_data:
-            kind = event_data['kind'],
+            kind = event_data['kind']
 
         content = None
         if 'content' in  event_data:

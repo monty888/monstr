@@ -273,15 +273,18 @@ class Client:
 
         if self.have_sub(sub_id):
             the_sub = self._subs[sub_id]
+            the_evt = Event.load(message[2])
+            # bad json??
+            if the_evt is None:
+                return
             # still receiving stored events
             if the_sub['is_eose'] is False:
-                the_sub['events'].append(Event.from_JSON(message[2]))
+                the_sub['events'].append(the_evt)
                 the_sub['last_event'] = datetime.now()
 
             # receiving adhoc events
             else:
                 try:
-                    the_evt = Event.from_JSON(message[2])
                     for c_handler in the_sub['handlers']:
                         try:
 
