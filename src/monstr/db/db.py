@@ -165,7 +165,7 @@ class SQLiteDatabase(Database, ABC):
         # if not catch_err and was_err:
         #     raise was_err
 
-        return ret
+        #return ret
 
     def execute_batch(self, batch):
         """

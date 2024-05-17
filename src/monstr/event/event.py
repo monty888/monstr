@@ -615,18 +615,21 @@ class Event:
 
         val = 0
         leading_z = 0
-        original_tags = copy(self.tags.tags)
+        original_tags = self.tags.tags[:]
+        nonce_template = original_tags + [['nonce', '', f'{target}']]
+
         while leading_z < target:
-            new_tags = copy(original_tags)
-            new_tags.append(['nonce', f'{val}', f'{target}'])
-            self.tags = new_tags
-            leading_z = (256 - int.from_bytes(bytes.fromhex(self.id), 'big').bit_length())
+            nonce_template[-1][1] = f'{val}'
+            self.tags = nonce_template
+
+            # Directly convert the hexadecimal id to an integer and calculate leading zeros
+            leading_z = (256 - int(self.id, 16).bit_length())
             val += 1
 
     @property
     def pow(self):
         # returns the events pow value - not necessarily targeted
-        return 256 - int.from_bytes(bytes.fromhex(self.id), 'big').bit_length()
+        return 256 - int(self.id, 16).bit_length()
 
     def nip13_valid_pow(self, min_pow):
         """
