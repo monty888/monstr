@@ -93,15 +93,15 @@ class util_funcs:
     def create_sqlite_store(db_file):
         from monstr.event.persist_sqlite import RelaySQLiteEventStore
         from monstr.ident.persist import SQLiteProfileStore
-        from monstr.channels.persist import SQLiteSQLChannelStore
+        # from monstr.channels.persist import SQLiteSQLChannelStore
         from monstr.settings.persist import SQLiteSettingsStore
         my_events = RelaySQLiteEventStore(db_file)
         if not my_events.exists():
             my_events.create()
             my_profiles = SQLiteProfileStore(db_file)
             my_profiles.create()
-            my_channels = SQLiteSQLChannelStore(db_file)
-            my_channels.create()
+            # my_channels = SQLiteSQLChannelStore(db_file)
+            # my_channels.create()
             db = SQLiteDatabase(db_file)
             my_settings = SQLiteSettingsStore(db_file)
             my_settings.create()
