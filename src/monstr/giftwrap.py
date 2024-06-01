@@ -1,7 +1,7 @@
 import json
 import random
 from datetime import datetime
-from monstr.signing import SignerInterface, BasicKeySigner
+from monstr.signing.signing import SignerInterface, BasicKeySigner
 from monstr.encrypt import Keys
 from monstr.event.event import Event
 from monstr.util import util_funcs

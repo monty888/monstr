@@ -1,7 +1,7 @@
 import hashlib
 import json
 from monstr.encrypt import Keys
-from monstr.signing import SignerInterface
+from monstr.signing.signing import SignerInterface
 from monstr.event.event import Event
 from monstr.util import util_funcs
 

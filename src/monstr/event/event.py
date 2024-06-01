@@ -128,6 +128,10 @@ class Event:
     KIND_CHANNEL_HIDE = 43
     KIND_CHANNEL_MUTE = 44
 
+    # used for messaging in in remote signing as nip46, should be encryped as nip4
+    # https://github.com/nostr-protocol/nips/blob/master/46.md
+    KIND_NIP46 = 24133
+
     # nip 98 http auth header event https://github.com/nostr-protocol/nips/blob/master/98.md
     KIND_HTTP_AUTH = 27235
 

@@ -21,7 +21,7 @@ from json import JSONDecodeError
 from datetime import datetime
 from monstr.util import util_funcs
 from monstr.event.event import Event
-from monstr.signing import SignerInterface, BasicKeySigner
+from monstr.signing.signing import SignerInterface, BasicKeySigner
 from monstr.encrypt import Keys
 
 
