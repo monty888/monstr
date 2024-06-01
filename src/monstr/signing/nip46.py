@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import logging
 import asyncio
 import json
@@ -14,6 +15,12 @@ class SignerException(Exception):
     pass
 
 
+class NIP46AuthoriseInterface(ABC):
+    @abstractmethod
+    async def authorise(self, method: str, id: str, params: [str]) -> bool:
+        pass
+
+
 class NIP46ServerConnection(EventHandler):
     """
         this is the server side of a NIP46 signing process.
@@ -28,11 +35,14 @@ class NIP46ServerConnection(EventHandler):
     def __init__(self,
                  signer: SignerInterface,
                  relay: [str],
-                 comm_k: str = None):
+                 comm_k: str = None,
+                 authoriser: NIP46AuthoriseInterface = None):
 
         self._signer = signer
         self._comm_k = comm_k
         self._relay = relay
+        self._authoriser = authoriser
+
         self._run = True
 
         # TODO - make client so that if it gets async for _on_connect, _do_event
@@ -271,8 +281,16 @@ class NIP46ServerConnection(EventHandler):
                               'nip04_decrypt',
                               'nip04_encrypt',
                               'sign_event'}:
+                    logging.info(f'{method} - {params}')
 
-                    await getattr(self, method)(id, params)
+                    if self._authoriser:
+                        if await self._authoriser.authorise(method, id, params):
+                            await getattr(self, method)(id, params)
+                        else:
+                            await self._do_response(error='request not authorised!',
+                                                    id=id)
+                    else:
+                        await getattr(self, method)(id, params)
 
         except Exception as e:
             logging.debug(f'SignerConnection::ado_event {e}')
