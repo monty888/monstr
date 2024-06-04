@@ -127,14 +127,21 @@ class KeystoreInterface(ABC):
     async def add(self, k: Keys | NamedKeys, name: str = None) -> NamedKeys:
         """
             add a new k, name map to the store
-            will error if name already exists
+            should error if name already exists
         """
 
     @abstractmethod
     async def update(self, k: Keys | NamedKeys, name: str = None) -> NamedKeys:
         """
             update an existing map in the store
-            will error if name does not exist
+            should error if name does not exist
+        """
+
+    @abstractmethod
+    async def delete(self, name: str = None) -> NamedKeys:
+        """
+            delete from store
+            should error if name does not exist
         """
 
     @abstractmethod
@@ -189,7 +196,10 @@ class FileKeyStore(KeystoreInterface):
         return ret
 
     async def select(self, filter: list | dict = None) -> [NamedKeys]:
-        raise KeyStoreException('FileKeyStore::select: method not implemented select')
+        # make sure store is loaded
+        await self._init_store()
+        ret = [self._store[k] for k in self._store.keys()]
+        return ret
 
     async def add(self, k: Keys | NamedKeys, name: str = None) -> NamedKeys:
         k = self.named_keys(k, name)
@@ -222,6 +232,19 @@ class FileKeyStore(KeystoreInterface):
         await self.save()
 
         return ret
+
+    async def delete(self, name: str = None) -> NamedKeys:
+        ret = await self.get(name)
+        if ret is None:
+            raise KeyStoreException(f'FileKeyStore::delete: {name} not found to delete')
+
+        # in mem
+        del self._store[ret.name]
+        # and file - note requires the whole store to be rewritten!!
+        await self.save()
+
+        return ret
+
 
     async def save(self, file_name: str = None):
         # nothing to save yet!
@@ -302,35 +325,48 @@ class SQLiteKeyStore(KeystoreInterface):
 
             # this will force an encrypt action, which will stop us having a db ks encrpted with
             # different passwords
-            await self._key_from_rs(rs)
+            if rs:
+                await self._key_from_row(rs[0])
 
-    async def _key_from_rs(self, rs) -> NamedKeys:
+    async def _key_from_row(self, row) -> NamedKeys:
         ret = None
-        if rs:
-            name = rs[0]['name']
-            key_str = rs[0]['key']
 
-            # decrypt if required
-            if self._encrypter is not None:
-                key_str = await self._encrypter.decrypt_data(key_str)
+        name = row['name']
+        key_str = row['key']
 
-            k = Keys.get_key(key_str)
-            ret = NamedKeys(name=name,
-                            priv_k=k.private_key_hex(),
-                            pub_k=k.public_key_hex())
+        # decrypt if required
+        if self._encrypter is not None:
+            key_str = await self._encrypter.decrypt_data(key_str)
+
+        k = Keys.get_key(key_str)
+        ret = NamedKeys(name=name,
+                        priv_k=k.private_key_hex(),
+                        pub_k=k.public_key_hex())
         return ret
 
     async def get(self, name: str) -> NamedKeys:
+        ret = None
         # make sure store is loaded
         await self._init_store()
 
         rs = await self._db.select_sql(sql='select name,key  from name_key_map where name=?',
                                        args=[name])
+        if rs:
+            ret = await self._key_from_row(rs[0])
 
-        return await self._key_from_rs(rs)
+        return ret
 
     async def select(self, filter: list | dict = None) -> [NamedKeys]:
-        raise KeyStoreException('FileKeyStore::select: method not implemented select')
+        # at the moment the filter is ignored and this just returns everything
+
+        # make sure store is loaded
+        await self._init_store()
+
+        rs = await self._db.select_sql(sql='select name,key  from name_key_map')
+
+        ret = [await self._key_from_row(c_row) for c_row in rs]
+
+        return ret
 
     async def add(self, k: Keys | NamedKeys, name: str = None) -> NamedKeys:
         ret = self.named_keys(k, name)
@@ -362,6 +398,21 @@ class SQLiteKeyStore(KeystoreInterface):
                                              ret.name])
         except Exception as e:
             raise KeyStoreException(f'SQLiteKeyStore::update: {e}')
+
+        return ret
+
+    async def delete(self, name: str = None) -> NamedKeys:
+        ret = await self.get(name)
+        if ret is None:
+            raise KeyStoreException(f'SQLiteKeyStore::delete: {name} not found to delete')
+
+        # try and add name, key in db will fail if it does not already exist
+        try:
+            # now do the update
+            await self._db.execute_sql(sql='delete from name_key_map where name=?',
+                                       args=[ret.name])
+        except Exception as e:
+            raise KeyStoreException(f'SQLiteKeyStore::delete: {e}')
 
         return ret
 

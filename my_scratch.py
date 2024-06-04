@@ -5,7 +5,7 @@ from monstr.ident.keystore import NamedKeys, FileKeyStore, KeyDataEncrypter, SQL
 from monstr.ident.persist import MemoryProfileStore
 from monstr.ident.profile import Profile
 
-# logging.getLogger().setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.DEBUG)
 
 
 async def convert_store():
@@ -21,8 +21,8 @@ async def convert_store():
         return input('keystore key: ')
 
     my_enc = KeyDataEncrypter(get_key=get_key)
-    new_store = SQLiteKeyStore(new_file,
-                               encrypter=my_enc)
+    new_store = FileKeyStore(new_file,
+                             encrypter=my_enc)
 
     await new_store.convert_memstore(old_file)
 
@@ -37,17 +37,20 @@ async def test_store():
 
     my_enc = KeyDataEncrypter(get_key=get_key)
 
-    new_store = SQLiteKeyStore(new_file,
+    new_store = FileKeyStore(new_file,
                              encrypter=my_enc)
 
-    await new_store.add(NamedKeys('moobs'))
+    # await new_store.add(NamedKeys('moobs'))
+    await new_store.delete('zoddy')
+    for c_k in await new_store.select():
+        print(c_k)
 
     # print(await new_store.get('monty_test'))
     #
     # from monstr.encrypt import Keys
     # await new_store.update(Keys(), 'monty_test')
 
-asyncio.run(convert_store())
+asyncio.run(test_store())
 
 
 
