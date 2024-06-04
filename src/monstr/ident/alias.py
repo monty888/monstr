@@ -6,8 +6,8 @@ from monstr.encrypt import Keys
 
 class ProfileFileAlias:
     """
-        in a file contains mappings between human usable alias and key pairs
-        so we don't always have to type out full keys
+        TODO: to be removed - replaced by keystore
+        use keystore.convert_memstore(old_filename) to update
     """
     def __init__(self, file_name: str):
         self._file_name = file_name
