@@ -41,7 +41,7 @@ async def test_store():
                              encrypter=my_enc)
 
     # await new_store.add(NamedKeys('moobs'))
-    await new_store.delete('zoddy')
+    await new_store.delete('monty')
     for c_k in await new_store.select():
         print(c_k)
 

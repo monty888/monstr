@@ -258,13 +258,11 @@ class FileKeyStore(KeystoreInterface):
             writer = csv.writer(csvfile, delimiter=',')
             kv: NamedKeys
             for name in self._store:
-                k = self._store[name]
-                kv = k.private_key_bech32()
-                if kv is None:
-                    kv = k.private_key_bech32()
+                kv = self._store[name]
+                k = await self.get_store_key(kv, self._encrypter)
 
                 writer.writerow([
-                    k.name, kv
+                    kv.name, k
                 ])
 
     async def load(self, file_name: str = None):
