@@ -268,6 +268,9 @@ class Encrypter(ABC):
         return ret
 
 
+class DecryptionException(Exception):
+    pass
+
 class NIP4Encrypt(Encrypter):
 
     def __init__(self, key: Keys | str):
@@ -434,13 +437,13 @@ class NIP44Encrypt(Encrypter):
 
         # TODO: size limits should be being calculated from MIN/MAX PAD
         if p_size < 132 or p_size > 87472:
-            raise Exception(f'invalid payload size {p_size}')
+            raise DecryptionException(f'invalid payload size {p_size}')
 
         data = base64.b64decode(payload)
         d_size = len(data)
 
         if d_size < 99 or d_size > 65603:
-            raise Exception(f'invalid payload size {p_size}')
+            raise DecryptionException(f'invalid payload size {p_size}')
 
         version = data[0]
         nonce = data[1:33]
@@ -449,7 +452,7 @@ class NIP44Encrypt(Encrypter):
 
         # only current/supported version
         if version != 2:
-            raise ValueError(f'nip44_encrypt unsupported version {version}')
+            raise DecryptionException(f'nip44_encrypt unsupported version {version}')
 
         return nonce, cipher_text, mac
 
@@ -467,7 +470,7 @@ class NIP44Encrypt(Encrypter):
     def _get_message_key(conversion_key: bytes, nonce: bytes) -> tuple[bytes, bytes, bytes]:
 
         if len(nonce) != 32:
-            raise ValueError('NIP44Encrypt:: _get_message_key nonce is not 32 bytes long')
+            raise DecryptionException('NIP44Encrypt:: _get_message_key nonce is not 32 bytes long')
 
         msg_key = NIP44Encrypt._hkdf_expand(prk=conversion_key,
                                             info=nonce,
@@ -536,7 +539,7 @@ class NIP44Encrypt(Encrypter):
                                                 hash_function=NIP44Encrypt.V2_HASH)
 
         if calculated_mac != mac:
-            raise ValueError('invalid MAC')
+            raise DecryptionException('invalid MAC')
 
         padded = NIP44Encrypt._do_decrypt(ciper_text=ciper_text,
                                           key=chacha_key,

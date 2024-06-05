@@ -21,8 +21,8 @@ async def convert_store():
         return input('keystore key: ')
 
     my_enc = KeyDataEncrypter(get_key=get_key)
-    new_store = FileKeyStore(new_file,
-                             encrypter=my_enc)
+    new_store = SQLiteKeyStore(new_file,
+                               encrypter=None)
 
     await new_store.convert_memstore(old_file)
 
@@ -50,7 +50,7 @@ async def test_store():
     # from monstr.encrypt import Keys
     # await new_store.update(Keys(), 'monty_test')
 
-asyncio.run(test_store())
+asyncio.run(convert_store())
 
 
 
