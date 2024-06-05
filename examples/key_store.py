@@ -6,6 +6,7 @@
 import sys
 import os
 import asyncio
+from getpass import getpass
 import logging
 from pathlib import Path
 from monstr.ident.keystore import SQLiteKeyStore, KeystoreInterface, KeyDataEncrypter, NamedKeys
@@ -19,7 +20,7 @@ DB_FILE = 'key_store_example.db'
 
 async def get_key() -> str:
     # get password to unlock keystore
-    return input('keystore key: ')
+    return getpass('keystore key: ')
 
 
 async def get_store() -> KeystoreInterface:

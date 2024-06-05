@@ -1,11 +1,17 @@
 import asyncio
 import logging
+from getpass import getpass
 from hashlib import sha256
 from monstr.ident.keystore import NamedKeys, FileKeyStore, KeyDataEncrypter, SQLiteKeyStore
 from monstr.ident.persist import MemoryProfileStore
 from monstr.ident.profile import Profile
 
 logging.getLogger().setLevel(logging.DEBUG)
+
+
+async def get_key() -> str:
+    # will block, use aiconsole where it matters
+    return getpass('keystore key: ')
 
 
 async def convert_store():
@@ -15,25 +21,16 @@ async def convert_store():
     # create a new key store and copy name/key maps in
     new_file = '/home/monty/.nostrpy/keystore.db'
 
-
-    async def get_key() -> str:
-        # will block, use aiconsole where it matters
-        return input('keystore key: ')
-
     my_enc = KeyDataEncrypter(get_key=get_key)
     new_store = SQLiteKeyStore(new_file,
-                               encrypter=None)
+                               encrypter=my_enc)
 
     await new_store.convert_memstore(old_file)
-
 
 
 async def test_store():
     # create a new key store and copy name/key maps in
     new_file = '/home/monty/.nostrpy/keystore.db'
-    async def get_key() -> str:
-        # will block, use aiconsole where it matters
-        return input('keystore key: ')
 
     my_enc = KeyDataEncrypter(get_key=get_key)
 
