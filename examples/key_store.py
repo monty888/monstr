@@ -9,7 +9,6 @@ import asyncio
 import logging
 from pathlib import Path
 from monstr.ident.keystore import SQLiteKeyStore, KeystoreInterface, KeyDataEncrypter, NamedKeys
-from monstr.encrypt import Keys
 from monstr.util import util_funcs
 
 # db will be stored here

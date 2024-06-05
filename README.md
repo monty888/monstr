@@ -49,8 +49,24 @@ k = Keys.get_key(key_str)
 
 # import existing hex private key
 k = Keys(priv_k=key_str)
+
 ```
 
+### keystore
+```python
+import asyncio
+from monstr.ident.keystore import SQLiteKeyStore
+
+async def get_store():
+    # keys store plain text see /examples/key_store.py to see how to password protect
+    store = SQLiteKeyStore('keystore.db')
+    nk = await store.get('monty')
+    # will be None if monty is not in the store
+    print(nk)
+
+if __name__ == '__main__':
+    asyncio.run(get_store())
+```
 
 
 ### run local relay
