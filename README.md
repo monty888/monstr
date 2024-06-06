@@ -7,6 +7,7 @@ Monstr: Python Nostr module. Python code for working with nostr.
 * Keys for working with and converting between hex/npub/nsec
 * KeyStore to hold keys encrypted and load via user defined aliases
 * Signer classes for abstacting use of keys so for example signing could be done via hardware
+* NIP46 NIP46ServerConnection to sign for remote client and NIP46ClientConnection (TODO) to use a remote signer 
 * Entities for encoding and decoding NIP19 nostr entities
 * NIP4 and NIP44 implemented for payload encryption
 * NIP59 gift wrapped events and old non standard gift wraps with inbox class
