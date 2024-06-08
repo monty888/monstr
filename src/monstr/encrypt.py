@@ -271,6 +271,7 @@ class Encrypter(ABC):
 class DecryptionException(Exception):
     pass
 
+
 class NIP4Encrypt(Encrypter):
 
     def __init__(self, key: Keys | str):

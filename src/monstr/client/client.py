@@ -745,7 +745,7 @@ class ClientPool:
     """
 
     def __init__(self,
-                 clients: str | Client,
+                 clients: str | Client | list[str | Client],
                  on_connect: Callable = None,
                  on_status: Callable = None,
                  on_eose: Callable = None,
@@ -785,7 +785,7 @@ class ClientPool:
         self._on_status = on_status
 
         # for whatever reason using pool but only a single client handed in
-        if isinstance(clients, str):
+        if isinstance(clients, (str, Client)):
             clients = [clients]
 
         # ssl if disabled - will be disabled for all clients

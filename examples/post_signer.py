@@ -19,9 +19,7 @@ async def do_post(url, text):
     async with Client(url) as c:
         n_msg = await my_signer.ready_post(Event(kind=Event.KIND_TEXT_NOTE,
                                                  content=text))
-        await my_signer.sign_event(n_msg)
         c.publish(n_msg)
-        # await asyncio.sleep(1)
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)
