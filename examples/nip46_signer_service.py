@@ -23,8 +23,7 @@ async def run_signer():
     print(await my_signer.bunker_url)
 
     # wait forever...
-    while True:
-        await asyncio.sleep(0.1)
+    await my_signer.run()
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.DEBUG)

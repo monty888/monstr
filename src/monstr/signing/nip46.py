@@ -43,32 +43,13 @@ class NIP46Comm(EventHandler, ABC):
         if isinstance(relay, str):
             self._relay = [relay]
 
-        # make client obj that will actually do the comm
-        async def aconnect(my_client: Client):
-            # sub any NIP46 events to our pub_k
-            my_client.subscribe(
-                handlers=[self],
-                filters={
-                    '#p': [await self._comm_signer.get_public_key()],
-                    'kinds': [Event.KIND_NIP46]
-                }
-            )
-
-        def on_connect(my_client: Client):
-            asyncio.create_task(aconnect(my_client))
-
-        self._run = True
-        self._client = ClientPool(self._relay,
-                                  on_connect=on_connect)
+        self._client = ClientPool(relay)
+        self._run = False
 
         # events queued and dealt with serially as they come in
         self._event_q: asyncio.Queue = asyncio.Queue()
         # start a process to work on the queued events
         self._event_process_task = asyncio.create_task(self._my_event_consumer())
-
-        # TODO: we should probably have start and end, etc as client
-        #  not just start a task here...
-        asyncio.create_task(self._client.run())
 
         # called when we see method events - most likely when we're acting as signer
         self._on_command = on_command
@@ -88,9 +69,12 @@ class NIP46Comm(EventHandler, ABC):
     async def bunker_key(self):
         return await self._comm_signer.get_public_key()
 
+    @property
+    def running(self) -> bool:
+        return self._run
+
     async def _get_msg_event(self, content: str, to_k: str) -> Event:
         # returns encrypted and signed method for content
-        print(content)
         # encrypt the content
         content = await self._comm_signer.nip4_encrypt(content, to_pub_k=to_k)
 
@@ -184,10 +168,35 @@ class NIP46Comm(EventHandler, ABC):
 
         return id
 
+    def run(self):
+        self._run = True
+
+        # make client obj that will actually do the comm
+        async def aconnect(my_client: Client):
+            # sub any NIP46 events to our pub_k
+            my_client.subscribe(
+                handlers=[self],
+                filters={
+                    '#p': [await self._comm_signer.get_public_key()],
+                    'kinds': [Event.KIND_NIP46]
+                }
+            )
+
+        def on_connect(my_client: Client):
+            asyncio.create_task(aconnect(my_client))
+
+        self._client.set_on_connect(on_connect)
+        asyncio.create_task(self._client.run())
 
     def end(self):
         self._run = False
         self._client.end()
+
+    async def __aenter__(self):
+        self.run()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self.end()
 
 
 class NIP46ServerConnection:
@@ -214,6 +223,11 @@ class NIP46ServerConnection:
 
         # all keys that are connected
         self._connections = set()
+
+        # call run to start, do it via asyncio.create_task if you want to
+        # do something else at same time, make sure to call end() when done
+        self._run = False
+
 
     @property
     async def bunker_url(self):
@@ -366,7 +380,14 @@ class NIP46ServerConnection:
 
         return ret
 
+    async def run(self):
+        self._run = True
+        self._comm.run()
+        while self._run is True:
+            await asyncio.sleep(0.1)
+
     def end(self):
+        self._run = False
         self._comm.end()
 
 
@@ -406,7 +427,8 @@ class NIP46Signer(SignerInterface):
 
         for now expects connection str, todo add where we initialise the connection
     """
-    def __init__(self, connection: str):
+    def __init__(self, connection: str,
+                 auto_start=False):
         parsed = urlparse(connection)
 
         if parsed.scheme != 'bunker':
@@ -431,6 +453,8 @@ class NIP46Signer(SignerInterface):
         # does the comm between us and the NIP46 server, we use ephemeral keys for signing
         self._comm = NIP46Comm(relay=self._relay,
                                on_response=self._do_response)
+        if auto_start:
+            self.run()
 
         # repsonses we waiting for key'd on id
         self._responses = {}
@@ -530,3 +554,15 @@ class NIP46Signer(SignerInterface):
         self._enc = NIP44SignerEncrypter(self)
         return await self._enc.adecrypt_event(evt)
 
+    def run(self):
+        self._comm.run()
+
+    def end(self):
+        self._comm.end()
+
+    async def __aenter__(self):
+        self._comm.run()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._comm.end()
