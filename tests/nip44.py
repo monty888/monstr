@@ -2,7 +2,7 @@ import json
 import os
 from monstr.encrypt import Keys, NIP44Encrypt
 from monstr.util import util_funcs
-from monstr.signing import SignerInterface, BasicKeySigner
+from monstr.signing.signing import SignerInterface, BasicKeySigner
 from monstr.event.event import Event
 # from tests.nip4 import TEST_TEXTS
 

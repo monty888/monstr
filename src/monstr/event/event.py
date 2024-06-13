@@ -560,6 +560,10 @@ class Event:
             self._get_id()
         return self._id
 
+    @id.setter
+    def id(self, id):
+        self._id = id
+
     @property
     def short_id(self):
         # shorter version of id for display, note id doesn't until signing
@@ -604,6 +608,10 @@ class Event:
     @property
     def sig(self):
         return self._sig
+
+    @sig.setter
+    def sig(self, sig):
+        self._sig = sig
 
     def __str__(self):
         ret = super(Event, self).__str__()

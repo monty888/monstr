@@ -213,7 +213,96 @@ class Keys:
         return '\n'.join(ret)
 
 
+class DecryptionException(Exception):
+    pass
+
+
 class Encrypter(ABC):
+
+    def encrypt(self, plain_text: str, to_pub_k: str) -> str:
+        raise NotImplementedError
+
+    def decrypt(self, payload: str, for_pub_k: str) -> str:
+        raise NotImplementedError
+
+    def public_key_hex(self) -> str:
+        raise NotImplementedError
+
+    async def aencrypt(self, plain_text: str, to_pub_k: str) -> str:
+        raise NotImplementedError
+
+    async def adecrypt(self, payload: str, for_pub_k: str) -> str:
+        raise NotImplementedError
+
+    async def apublic_key_hex(self) -> str:
+        raise NotImplementedError
+
+    """
+        util methods for basic nostr messaging if encrypt and decrypt functions have been declared
+        (for basic 2 way event mesasge i.e use the p_tags)
+        both return new event:
+            encrypt_event, content encrypted and p_tags set (append your own p_tags after)
+            decrypt_event, content decrypted based on the p_tags
+    """
+
+    def _get_to_pub_key_hex(self, to_pub_k: str) -> str:
+        ret = to_pub_k
+        if isinstance(ret, Keys):
+            ret = to_pub_k.public_key_hex()
+        elif not Keys.is_valid_key(ret):
+            raise ValueError(f'{self.__class__.__name__}::encrypt_event invalid to_pub_k - {ret}')
+        return ret
+
+    def _make_encrypt_event(self, src_event: Event, to_k: str) -> Event:
+        to_k_hex = self._get_to_pub_key_hex(to_k)
+
+        # copy the event
+        ret = Event.load(src_event.data())
+        ret.tags = [['p', to_k_hex]]
+        return ret
+
+    def encrypt_event(self, evt: Event, to_pub_k: str | Keys) -> Event:
+        ret = self._make_encrypt_event(evt, to_pub_k)
+        # the pub_k author must be us
+        ret.pub_key = self.public_key_hex()
+        # change content to cipher_text
+        ret.content = self.encrypt(plain_text=ret.content,
+                                   to_pub_k=ret.tags.get_tag_value_pos('p'))
+        return ret
+
+    async def aencrypt_event(self, evt: Event, to_pub_k: str | Keys) -> Event:
+        ret = self._make_encrypt_event(evt, to_pub_k)
+        # the pub_k author must be us
+        ret.pub_key = await self.apublic_key_hex()
+        # change content to cipher_text
+        ret.content = await self.aencrypt(plain_text=ret.content,
+                                          to_pub_k=ret.tags.get_tag_value_pos('p'))
+        return ret
+
+    def decrypt_event(self, evt: Event) -> Event:
+        pub_k = evt.pub_key
+        if pub_k == self.public_key_hex():
+            pub_k = evt.p_tags[0]
+
+        ret = Event.load(evt.data())
+        ret.content = self.decrypt(payload=evt.content,
+                                   for_pub_k=pub_k)
+        return ret
+
+    async def adecrypt_event(self, evt: Event) -> Event:
+        pub_k = evt.pub_key
+        if pub_k == await self.apublic_key_hex():
+            pub_k = evt.p_tags[0]
+
+        # always a copy
+        ret = Event.load(evt.data())
+
+        ret.content = await self.adecrypt(payload=evt.content,
+                                          for_pub_k=pub_k)
+        return ret
+
+
+class KeyEncrypter(Encrypter):
 
     def __init__(self, key: Keys | str):
         if isinstance(key, str):
@@ -224,55 +313,11 @@ class Encrypter(ABC):
         self._key = key
         self._priv_k = secp256k1.PrivateKey(bytes.fromhex(self._key.private_key_hex()))
 
-    @abstractmethod
-    def encrypt(self, plain_text: str, to_pub_k: str) -> str:
-        raise NotImplementedError
-
-    @abstractmethod
-    def decrypt(self, payload: str, for_pub_k: str) -> str:
-        raise NotImplementedError
-
-    """
-        util methods for basic nostr messaging if encrypt and decrypt functions have been declared
-        (for basic 2 way event mesasge i.e use the p_tags)
-        both return new event:
-            encrypt_event, content encrypted and p_tags set (append your own p_tags after)
-            decrypt_event, content decrypted based on the p_tags
-    """
-    def encrypt_event(self, evt: Event, to_pub_k: str | Keys) -> Event:
-        if isinstance(to_pub_k, Keys):
-            to_pub_k = to_pub_k.public_key_hex()
-        elif not Keys.is_valid_key(to_pub_k):
-            raise ValueError(f'{self.__class__.__name__}::encrypt_event invalid to_pub_k - {to_pub_k}')
-
-        ret = Event.load(evt.data())
-
-        # the pub_k author must be us
-        ret.pub_key = self._key.public_key_hex()
-        # change content to cipher_text
-        ret.content = self.encrypt(plain_text=evt.content,
-                                   to_pub_k=to_pub_k)
-
-        ret.tags = [['p', to_pub_k]]
-
-        return ret
-
-    def decrypt_event(self, evt: Event) -> Event:
-        pub_k = evt.pub_key
-        if pub_k == self._key.public_key_hex():
-            pub_k = evt.p_tags[0]
-
-        ret = Event.load(evt.data())
-        ret.content = self.decrypt(payload=evt.content,
-                                   for_pub_k=pub_k)
-        return ret
+    def public_key_hex(self) -> str:
+        return self._key.public_key_hex()
 
 
-class DecryptionException(Exception):
-    pass
-
-
-class NIP4Encrypt(Encrypter):
+class NIP4Encrypt(KeyEncrypter):
 
     def __init__(self, key: Keys | str):
         super().__init__(key)
@@ -342,7 +387,7 @@ class NIP4Encrypt(Encrypter):
                                 for_pub_k=for_pub_k).decode('utf8')
 
 
-class NIP44Encrypt(Encrypter):
+class NIP44Encrypt(KeyEncrypter):
     """
         base functionality for implementing NIP44
         https://github.com/paulmillr/nip44

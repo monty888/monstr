@@ -2,7 +2,7 @@ import asyncio
 import json
 from monstr.giftwrap import GiftWrap
 from monstr.encrypt import Keys
-from monstr.signing import BasicKeySigner
+from monstr.signing.signing import BasicKeySigner
 from monstr.event.event import Event
 
 async def test_encrypt_decrypt():

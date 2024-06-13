@@ -5,7 +5,7 @@ from monstr.client.client import Client
 from monstr.event.event import Event
 
 # url to relay used for talking to the signer
-RELAY = 'ws://localhost:8080'
+RELAY = 'ws://localhost:8081'
 
 
 async def do_post(url, text):
@@ -22,9 +22,26 @@ async def do_post(url, text):
 
     # from here it's just a signer interface same as if we were using BasicKeySigner
     async with Client(url) as c:
+        # plain text
         n_msg = await my_signer.ready_post(Event(kind=Event.KIND_TEXT_NOTE,
                                                  content=text))
         c.publish(n_msg)
+
+        # nip4 encrypted to our self
+        enc_event = Event(kind=Event.KIND_TEXT_NOTE,
+                          content=text+' - encrypted nip4')
+        enc_event = await my_signer.nip4_encrypt_event(enc_event,
+                                                       to_pub_k=await my_signer.get_public_key())
+        await my_signer.sign_event(enc_event)
+        c.publish(enc_event)
+
+        # nip44 encrypted to our self
+        enc_event = Event(kind=Event.KIND_TEXT_NOTE,
+                          content=text + ' - encrypted nip44')
+        enc_event = await my_signer.nip44_encrypt_event(enc_event,
+                                                        to_pub_k=await my_signer.get_public_key())
+        await my_signer.sign_event(enc_event)
+        c.publish(enc_event)
 
 
 if __name__ == "__main__":
