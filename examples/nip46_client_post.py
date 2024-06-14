@@ -5,7 +5,7 @@ from monstr.client.client import Client
 from monstr.event.event import Event
 
 # url to relay used for talking to the signer
-RELAY = 'ws://localhost:8081'
+RELAY = 'ws://localhost:8080'
 
 
 async def do_post(url, text):
@@ -53,7 +53,7 @@ async def do_post(url, text):
 
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
     text = 'hello using NIP46 signer'
 
     asyncio.run(do_post(RELAY, text))

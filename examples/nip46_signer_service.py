@@ -5,7 +5,7 @@ from monstr.signing.nip46 import NIP46ServerConnection
 from monstr.signing.signing import BasicKeySigner
 
 # url to relay used for talking to the signer
-RELAY = 'ws://localhost:8081'
+RELAY = 'ws://localhost:8080'
 
 
 async def run_signer():
@@ -26,5 +26,5 @@ async def run_signer():
     await my_signer.run()
 
 if __name__ == "__main__":
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.ERROR)
     asyncio.run(run_signer())
