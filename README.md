@@ -19,7 +19,7 @@ cd monstr
 python3 -m venv venv
 source venv/bin/activate
 pip install .
-# probably required to run examples else nostr module won't be found
+# probably required to run examples else monstr module won't be found
 export PYTHONPATH="$PYTHONPATH:./"
 ```
 to use postgres as store psycopg2 must be installed

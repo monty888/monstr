@@ -66,7 +66,7 @@ class Keys:
     @staticmethod
     def is_hex_key(key:str):
         """
-            returns true if looks like valid hex string for nonstr key its not possible to tell if priv/pub
+            returns true if looks like valid hex string for nostr key its not possible to tell if priv/pub
         """
         ret = False
         if len(key) == 64:
@@ -176,7 +176,7 @@ class Keys:
         else:
             self._pub_k = Keys.hex_key(pub_k)
             if not self._pub_k:
-                raise Exception('pub_k does\'t look like a valid nonstr key - %s' % pub_k)
+                raise Exception('pub_k does\'t look like a valid nostr key - %s' % pub_k)
 
     def private_key_hex(self):
         return self._priv_k
