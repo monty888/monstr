@@ -1,4 +1,5 @@
 import json
+from typing import Union
 from abc import ABC, abstractmethod
 from datetime import datetime
 from aiohttp import http_websocket
@@ -154,7 +155,7 @@ class AuthenticatedAcceptor(AcceptReqHandler, NIPSupport):
         ever get authenticated
     """
     def __init__(self,
-                 authorised_keys: set | list | None = None,
+                 authorised_keys: Union[set, list, None] = None,
                  descriptive_msg=True):
 
         # hex pubkeys to accept - probably we should also accept [Keys] maybe even Profiles?
@@ -171,7 +172,7 @@ class AuthenticatedAcceptor(AcceptReqHandler, NIPSupport):
         return self._authorised_keys
 
     @authorised_keys.setter
-    def authorised_keys(self, authorised_keys: list | set | None = None):
+    def authorised_keys(self, authorised_keys: Union[list, set, None] = None):
         if isinstance(authorised_keys, list):
             authorised_keys = set(authorised_keys)
         self._authorised_keys = authorised_keys

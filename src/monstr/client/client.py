@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import copy
-# from typing import Callable
 import logging
 import aiohttp
 try:
@@ -16,7 +15,7 @@ except:
     pass
 import asyncio
 import json
-from typing import Callable
+from typing import Callable, Union
 from json import JSONDecodeError
 from datetime import datetime
 from monstr.util import util_funcs
@@ -366,7 +365,7 @@ class Client:
                 ])
             )
 
-    async def auth(self, signer: SignerInterface | Keys, challenge: str):
+    async def auth(self, signer: Union[SignerInterface, Keys], challenge: str):
         # better to use signer but if we just got keys we'll turn into a BasicKeySigner
         if isinstance(signer, Keys):
             signer = BasicKeySigner(signer)
@@ -453,7 +452,7 @@ class Client:
         return ret
 
     async def query_until(self,
-                          until_date: datetime | int,
+                          until_date: Union[datetime, int],
                           filters: object = None,
                           do_event: callable = None,
                           timeout=None,
@@ -745,7 +744,7 @@ class ClientPool:
     """
 
     def __init__(self,
-                 clients: str | Client | list[str | Client],
+                 clients: Union[str, Client, list[Union[str, Client]]],
                  on_connect: Callable = None,
                  on_status: Callable = None,
                  on_eose: Callable = None,
@@ -1144,7 +1143,7 @@ class ClientPool:
                            on_complete=on_complete)
 
     def query_until(self,
-                    until_date: datetime | int,
+                    until_date: Union[datetime, int],
                     filters: [] = None,
                     do_event: callable = None,
                     wait_connect: bool = False,

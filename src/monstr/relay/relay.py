@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 if TYPE_CHECKING:
     pass
 import logging
@@ -76,7 +76,7 @@ class Relay:
     VALID_CMDS = ['EVENT', 'REQ', 'CLOSE', 'AUTH']
 
     def __init__(self,
-                 store: RelayEventStoreInterface | ARelayEventStoreInterface = None,
+                 store: Union[RelayEventStoreInterface, ARelayEventStoreInterface] = None,
                  accept_req_handler:[AcceptReqHandler] = None,
                  sub_filter: [SubscriptionFilter] = None,
                  max_sub=10,
