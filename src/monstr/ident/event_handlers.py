@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 if TYPE_CHECKING:
     from monstr.client.client import Client
 
@@ -42,7 +42,7 @@ class ProfileEventHandlerInterface(ABC):
         pass
 
     @abstractmethod
-    async def aload_contacts(self, p: str | Profile) -> ContactList:
+    async def aload_contacts(self, p: Union[str, Profile]) -> ContactList:
         pass
 
     @staticmethod
@@ -289,7 +289,7 @@ class NetworkedProfileEventHandler(ProfileEventHandler):
                         self._cache[k] = n_p
         return ProfileList(ret)
 
-    async def aload_contacts(self, p: str | Profile) -> ContactList:
+    async def aload_contacts(self, p: Union[str, Profile]) -> ContactList:
         if isinstance(p, Profile):
             pub_key = p.public_key
         else:

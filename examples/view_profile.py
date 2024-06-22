@@ -53,7 +53,7 @@ class MetaServer:
 
         k = Keys.get_key(pub_k)
         if k is None:
-            raise ServerError(f'{pub_k} - doesn\'t look like a nonstr key')
+            raise ServerError(f'{pub_k} - doesn\'t look like a nostr key')
 
         pub_k = k.public_key_hex()
         ret = {

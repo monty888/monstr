@@ -18,7 +18,7 @@ import secp256k1
 import bech32
 from enum import Enum
 
-import typing
+from typing import Union
 
 # required for encrypt_event, decrypt event... maybe these methods don't really belong here
 # or else keys should be in onw file/folder for encrypt?
@@ -66,7 +66,7 @@ class Keys:
     @staticmethod
     def is_hex_key(key:str):
         """
-            returns true if looks like valid hex string for nonstr key its not possible to tell if priv/pub
+            returns true if looks like valid hex string for nostr key its not possible to tell if priv/pub
         """
         ret = False
         if len(key) == 64:
@@ -176,7 +176,7 @@ class Keys:
         else:
             self._pub_k = Keys.hex_key(pub_k)
             if not self._pub_k:
-                raise Exception('pub_k does\'t look like a valid nonstr key - %s' % pub_k)
+                raise Exception('pub_k does\'t look like a valid nostr key - %s' % pub_k)
 
     def private_key_hex(self):
         return self._priv_k
@@ -261,7 +261,7 @@ class Encrypter(ABC):
         ret.tags = [['p', to_k_hex]]
         return ret
 
-    def encrypt_event(self, evt: Event, to_pub_k: str | Keys) -> Event:
+    def encrypt_event(self, evt: Event, to_pub_k: Union[str, Keys]) -> Event:
         ret = self._make_encrypt_event(evt, to_pub_k)
         # the pub_k author must be us
         ret.pub_key = self.public_key_hex()
@@ -270,7 +270,7 @@ class Encrypter(ABC):
                                    to_pub_k=ret.tags.get_tag_value_pos('p'))
         return ret
 
-    async def aencrypt_event(self, evt: Event, to_pub_k: str | Keys) -> Event:
+    async def aencrypt_event(self, evt: Event, to_pub_k: Union[str, Keys]) -> Event:
         ret = self._make_encrypt_event(evt, to_pub_k)
         # the pub_k author must be us
         ret.pub_key = await self.apublic_key_hex()
@@ -304,7 +304,7 @@ class Encrypter(ABC):
 
 class KeyEncrypter(Encrypter):
 
-    def __init__(self, key: Keys | str):
+    def __init__(self, key: Union[Keys, str]):
         if isinstance(key, str):
             key = Keys(priv_k=key)
         if key.private_key_hex() is None:
@@ -319,7 +319,7 @@ class KeyEncrypter(Encrypter):
 
 class NIP4Encrypt(KeyEncrypter):
 
-    def __init__(self, key: Keys | str):
+    def __init__(self, key: Union[Keys, str]):
         super().__init__(key)
 
         self._ec_key = ec.derive_private_key(int.from_bytes(self._priv_k.private_key,
@@ -401,7 +401,7 @@ class NIP44Encrypt(KeyEncrypter):
     V2_HASH = sha256
     V2_SALT = b'nip44-v2'
 
-    def __init__(self, key: Keys | str):
+    def __init__(self, key: Union[Keys, str]):
         super().__init__(key)
 
     # hkdf functions taken and modified from https://en.wikipedia.org/wiki/HKDF 14/4/2024
