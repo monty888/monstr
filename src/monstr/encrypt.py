@@ -8,8 +8,11 @@ from hashlib import sha256
 import hmac
 from math import floor, log2
 import base64
-from Crypto.Cipher import ChaCha20, AES
+import unicodedata
+from Crypto.Cipher import ChaCha20, AES, ChaCha20_Poly1305
 from Crypto.Util.Padding import pad, unpad
+from Crypto.Protocol.KDF import scrypt
+from Crypto.Random import get_random_bytes
 # from Crypto.PublicKey import ECC
 # unfortunately we need this both crypto libs to as PyCryptodome doesn't seem to support sep256k1
 # and cryptograpy.io doesn't have Chacha without the mac that we need for NIP44 as far as I could understand it
@@ -120,13 +123,16 @@ class Keys:
         return ret
 
     @staticmethod
-    def get_key(key: str):
+    def get_key(key: str, hex_default='public'):
         """
-        returns a key object from the given str, npub/nsec will be used correctly if hex it'll only be used as a
-        public key.
-        where npub/hex is supplied the Keys objects will return None for private_key methods
-        if the key str doesn't look valid None is returned
+        returns a key object from the given str
+        accepts npub, nsec or hex, where hex it'll be used as pub or private dependent on value of hex_default
+        public keys return None for methods to get private_ket
         """
+        hex_default = hex_default.lower()
+        if hex_default not in ('public', 'private'):
+            raise ValueError(f'Keys::get_key - hex default must be one of public, private got {hex_default}')
+
 
         # if already a key object just return as is
         if isinstance(key, Keys):
@@ -138,7 +144,12 @@ class Keys:
             if key.startswith('nsec'):
                 ret = Keys(priv_k=key)
             else:
-                ret = Keys(pub_k=key)
+                # normal default, any hex returns a public only key
+                if hex_default == 'public':
+                    ret = Keys(pub_k=key)
+                # set hex_default to private and you'll get a signing key
+                else:
+                    ret = Keys(priv_k=key)
         return ret
 
     def __init__(self, priv_k: str=None, pub_k: str=None):
@@ -350,7 +361,9 @@ class NIP4Encrypt(KeyEncrypter):
         share_key = self.get_echd_key_hex(to_pub_k)
         key = secp256k1.PrivateKey().deserialize(share_key)
 
-        iv = os.urandom(16)
+        # iv = os.urandom(16)
+        iv = get_random_bytes(16)
+
         data = pad(data, block_size=16, style='pkcs7')
         ciper = AES.new(key=key, mode=AES.MODE_CBC, iv=iv)
         ciper_text = ciper.encrypt(data)
@@ -550,7 +563,9 @@ class NIP44Encrypt(KeyEncrypter):
 
     def encrypt(self, plain_text: str, to_pub_k: str, version: int = 2) -> str:
         con_key = self._get_conversation_key(for_pub_k=to_pub_k)
-        nonce = os.urandom(32)
+
+        # nonce = os.urandom(32)
+        nonce = get_random_bytes(32)
 
         chacha_key, chacha_nonce, hmac_key = self._get_message_key(conversion_key=con_key,
                                                                    nonce=nonce)
@@ -594,3 +609,133 @@ class NIP44Encrypt(KeyEncrypter):
         plain_text = NIP44Encrypt._unpad(padded=padded)
 
         return plain_text.decode('utf-8')
+
+
+class NIP49:
+    """
+        encryption for storage of key material
+        see https://github.com/nostr-protocol/nips/blob/master/49.md
+    """
+
+    @staticmethod
+    def _normalize_password(password: str):
+        return unicodedata.normalize('NFKC', password)
+
+    @staticmethod
+    def _derive_symmetric_key(password: str, salt: bytes, log_n: int=16) -> bytes:
+        r = 8
+        p = 1
+        n = 2 ** log_n
+        return scrypt(password, salt, key_len=32, N=n, r=r, p=p)
+
+    @staticmethod
+    def encrypt_key(password: str,
+                    key: Keys | str,
+                    log_n:int=16,
+                    key_security_byte:int = 0x02,
+                    support_pub_k: bool = False) -> str:
+
+        # the spec actually only supprts private_only that is ncryptsec
+        # but with support_pub_k as true and private_key as Keys with public only we'll support pub_ks
+        # as we want to do this in our key_store
+        mode = 'private_key'
+
+        if isinstance(key, Keys):
+            if key.private_key_hex() is not None:
+                key_str = key.private_key_hex()
+            else:
+                # public key style
+                key_str = key.public_key_hex()
+                mode = 'public_key'
+                if not support_pub_k:
+                    raise ValueError('NIP49::encrypt_key: given public key but support_pub_k is False')
+        else:
+            # in this case the key is always taken to be a priv hex - there no way to tell otherwise
+            key_str = key
+            if not Keys.is_valid_key(key_str):
+                raise ValueError(f'NIP49::encrypt_key:Invalid key string - {key_str}')
+
+        # turn to byte for use
+        key_bytes =  bytes.fromhex(key_str)
+
+        # Normalize password
+        normalized_password = NIP49._normalize_password(password)
+
+        # Generate salt
+        salt = get_random_bytes(16)
+
+        # Derive symmetric key using scrypt
+        symmetric_key = NIP49._derive_symmetric_key(normalized_password, salt, log_n)
+
+        # Generate nonce
+        nonce = get_random_bytes(24)
+
+        # Prepare associated data
+        associated_data = bytes([key_security_byte])
+
+        # Encrypt the private key
+        cipher = ChaCha20_Poly1305.new(key=symmetric_key, nonce=nonce)
+
+        cipher.update(associated_data)
+        ciphertext, tag = cipher.encrypt_and_digest(key_bytes)
+
+        # Construct ciphertext concatenation
+        version_number = bytes([0x02])
+        log_n_byte = bytes([log_n])
+        ciphertext_concatenation = version_number + log_n_byte + salt + nonce + associated_data + ciphertext + tag
+
+        prefix = 'ncryptsec'
+        if mode == 'public_key':
+            prefix = 'ncryptpub'
+
+        # finally return the bech32 encrypted key
+        return bech32.bech32_encode(prefix, bech32.convertbits(ciphertext_concatenation, 8, 5))
+
+    @staticmethod
+    def decrypt_key(password:str,
+                    encrypted_private_key: str,
+                    support_pub_k: bool = False) -> Keys:
+        # Decode from bech32
+        prefix, data = bech32.bech32_decode(encrypted_private_key)
+        hex_default = 'private'
+        if prefix == 'ncryptpub':
+            hex_default = 'public'
+
+        if prefix not in ('ncryptsec', 'ncryptpub'):
+            raise ValueError(f"NIP49::decrypt_private_key:Invalid bech32 prefix, valid values are ncryptsec, ncryptpub got {prefix}")
+
+        if prefix == 'ncryptpub' and support_pub_k is False:
+            raise ValueError(
+                f"NIP49::decrypt_key:Got ncryptpub as prefix but support_pub_k is False")
+
+        decoded_data = bech32.convertbits(data, 5, 8, False)
+        decoded_data = bytes(decoded_data)
+
+        if len(decoded_data) != 91:
+            raise ValueError("Invalid encoded private key length")
+
+        # Parse the components
+        version_number = decoded_data[0]
+        if version_number != 0x02:
+            raise ValueError("Unsupported version number")
+
+        log_n = decoded_data[1]
+        salt = decoded_data[2:18]
+        nonce = decoded_data[18:42]
+        associated_data = decoded_data[42:43]
+        ciphertext = decoded_data[43:-16]
+        tag = decoded_data[-16:]
+
+        # Normalize password
+        normalized_password = NIP49._normalize_password(password)
+
+        # Derive symmetric key using scrypt
+        symmetric_key = NIP49._derive_symmetric_key(normalized_password, salt, log_n)
+
+        # Decrypt the private key
+        cipher = ChaCha20_Poly1305.new(key=symmetric_key, nonce=nonce)
+
+        cipher.update(associated_data)
+        private_key = cipher.decrypt_and_verify(ciphertext, tag).hex()
+
+        return Keys.get_key(private_key, hex_default=hex_default)
