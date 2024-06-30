@@ -1,5 +1,6 @@
 import json
 import random
+from typing import Union
 from datetime import datetime
 from monstr.signing.signing import SignerInterface, BasicKeySigner
 from monstr.encrypt import Keys
@@ -45,7 +46,7 @@ class GiftWrap:
 
     async def _make_seal(self,
                          rumour_evt: Event,
-                         to_pub_k: Keys | str) -> Event:
+                         to_pub_k: Union[Keys, str]) -> Event:
 
         if rumour_evt.sig:
             raise GiftWrapException('GiftWrap::_make_seal: rumour event should not be signed!')
@@ -63,7 +64,7 @@ class GiftWrap:
         await self._signer.sign_event(ret)
         return ret
 
-    async def wrap(self, evt: Event, to_pub_k: Keys | str, pow: int = None) -> tuple[Event, Keys]:
+    async def wrap(self, evt: Event, to_pub_k: Union[Keys, str], pow: int = None) -> tuple[Event, Keys]:
         if isinstance(to_pub_k, Keys):
             to_pub_k = to_pub_k.public_key_hex()
 

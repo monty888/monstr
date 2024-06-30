@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Union
 import json
 import logging
 from json import JSONDecodeError
@@ -162,7 +163,7 @@ class Event:
     #     )
 
     @staticmethod
-    def load(event_data: str | dict, validate=False) -> 'Event':
+    def load(event_data: Union[str, dict], validate=False) -> 'Event':
         """
             return a Event object either from a dict or json str this replaces the old from_JSON method
             that was actually just from a string...

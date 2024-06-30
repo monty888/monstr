@@ -1,5 +1,6 @@
 import hashlib
 import json
+from typing import Union
 from monstr.encrypt import Keys
 from monstr.signing.signing import SignerInterface
 from monstr.event.event import Event
@@ -48,7 +49,7 @@ class Inbox:
         # decrypted
         self._share_maps = {}
 
-    async def set_share_map(self, for_sign: SignerInterface, to_keys: [Keys | str]):
+    async def set_share_map(self, for_sign: SignerInterface, to_keys: list[Union[Keys, str]]):
         n_map = {}
         for k in to_keys:
             if isinstance(k, Keys):
@@ -75,7 +76,7 @@ class Inbox:
     def kind(self) -> int:
         return self._kind
 
-    async def wrap_event(self, evt, from_sign: SignerInterface = None, to_k: Keys | str = None) -> Event:
+    async def wrap_event(self, evt, from_sign: SignerInterface = None, to_k: Union[Keys, str] = None) -> Event:
         tags = []
         if to_k and isinstance(to_k, Keys):
             to_k = to_k.public_key_hex()
