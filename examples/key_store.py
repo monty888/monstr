@@ -9,7 +9,7 @@ import asyncio
 from getpass import getpass
 import logging
 from pathlib import Path
-from monstr.ident.keystore import SQLiteKeyStore, KeystoreInterface, KeyDataEncrypter, NamedKeys
+from monstr.ident.keystore import SQLiteKeyStore, KeystoreInterface, NIP49KeyDataEncrypter, NamedKeys
 from monstr.util import util_funcs
 
 # db will be stored here
@@ -18,15 +18,14 @@ WORK_DIR = f'{Path.home()}/.nostrpy/'
 DB_FILE = 'key_store_example.db'
 
 
-async def get_key() -> str:
+async def get_password() -> str:
     # get password to unlock keystore
-    return getpass('keystore key: ')
+    return getpass('keystore password: ')
 
 
 async def get_store() -> KeystoreInterface:
     # keys encrypted with pw, if encryptor not sent in then keys are store in plain_text
-    my_enc = KeyDataEncrypter(get_key=get_key)
-
+    my_enc = NIP49KeyDataEncrypter(get_password=get_password)
     return SQLiteKeyStore(WORK_DIR + DB_FILE,
                           encrypter=my_enc)
 
