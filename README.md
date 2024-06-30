@@ -5,7 +5,7 @@ Monstr: Python Nostr module. Python code for working with nostr.
 * A basic relay implementation that can be used for testing, and can be easily extended.
 * Client and ClientPool classes to manage access to one or multiple relays
 * Keys for working with and converting between hex/npub/nsec
-* KeyStore to hold keys encrypted and load via user defined aliases
+* KeyStore for keys load, access by alias store encrypted using NIP49, NIP44 or custom
 * Signer classes for abstacting use of keys so for example signing could be done via hardware
 * NIP46 NIP46ServerConnection to sign for remote client and NIP46Signer to use a remote signer 
 * Entities for encoding and decoding NIP19 nostr entities
