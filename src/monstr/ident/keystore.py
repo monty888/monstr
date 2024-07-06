@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 import csv
 import logging
@@ -361,6 +362,7 @@ class FileKeyStore(KeystoreInterface):
                 # decrypt if required
                 if self._encrypter is not None:
                     k = await self._encrypter.decrypt_key(key_str)
+                    await asyncio.sleep(0.01)
                 else:
                     k = Keys.get_key(key_str)
 
@@ -410,6 +412,7 @@ class SQLiteKeyStore(KeystoreInterface):
         # decrypt if required
         if self._encrypter is not None:
             k = await self._encrypter.decrypt_key(key_str)
+            await asyncio.sleep(0.01)
         else:
             k = Keys.get_key(key_str)
 
