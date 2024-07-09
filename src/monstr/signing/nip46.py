@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import datetime
 import logging
 import asyncio
 import json
@@ -12,7 +13,6 @@ from monstr.signing.signing import SignerInterface, BasicKeySigner
 from monstr.util import util_funcs
 
 
-
 class SignerException(Exception):
     pass
 
@@ -21,6 +21,62 @@ class NIP46AuthoriseInterface(ABC):
     @abstractmethod
     async def authorise(self, method: str, id: str, params: [str]) -> bool:
         pass
+
+# some basic authorisers
+class AuthoriseAll(NIP46AuthoriseInterface):
+
+    def __init__(self, auth_info: callable = None):
+        self._auth_info = auth_info
+
+    async def authorise(self, method: str, id: str, params: [str]) -> bool:
+        if self._auth_info:
+            await self._auth_info(method, id, params)
+        return True
+
+
+class RequestAuthorise(NIP46AuthoriseInterface):
+
+    def __init__(self,
+                 request_auth: callable,
+                 auth_info: callable = None):
+
+        self._request_auth = request_auth
+        self._auth_info = auth_info
+
+    async def authorise(self, method: str, id: str, params: [str]) -> bool:
+        if self._auth_info:
+            await self._auth_info(method, id, params)
+
+        return await self._request_auth(method, id, params)
+
+
+class TimedAuthorise(NIP46AuthoriseInterface):
+
+    def __init__(self,
+                 request_auth: callable,
+                 auth_info: callable = None,
+                 auth_mins = 10):
+
+        self._auth_info = auth_info
+        self._do_request_auth = RequestAuthorise(request_auth=request_auth)
+
+        self._last_auth_at = None
+        self._auth_delta = datetime.timedelta(minutes=auth_mins)
+
+    async def authorise(self, method: str, id: str, params: [str]) -> bool:
+        now = datetime.datetime.now()
+
+        # maybe we need to reauth?
+        if self._last_auth_at is None or (now - self._last_auth_at) > self._auth_delta:
+            ret = await self._do_request_auth.authorise(method, id, params)
+            if ret:
+                self._last_auth_at = now
+        else:
+            ret = True
+            if self._auth_delta:
+                await self._auth_info(method, id, params)
+
+        return ret
 
 
 class NIP46Comm(EventHandler, ABC):
@@ -42,6 +98,11 @@ class NIP46Comm(EventHandler, ABC):
         self._relay = relay
         if isinstance(relay, str):
             self._relay = [relay]
+
+        # maybe could execept client objs but just makes things cleaner if we only use our own client obj
+        for i in range(0, len(self._relay)):
+            if not isinstance(self._relay[i],str):
+                raise ValueError(f'NIP46Comm::__init__: should be str got {self._relay[i]}')
 
         self._client = ClientPool(relay)
         self._run = False
@@ -97,7 +158,6 @@ class NIP46Comm(EventHandler, ABC):
             try:
                 args = await self._event_q.get()
                 await self.ado_event(*args)
-
             except Exception as e:
                 logging.debug(f'NIP46Comm::_my_event_consumer: {e}')
 
@@ -112,10 +172,8 @@ class NIP46Comm(EventHandler, ABC):
         )
 
     async def ado_event(self, the_client: Client, sub_id, evt: Event):
-
         # pull of events that were put on the queue bu do_event and deal with them
         decrypted_evt = await self._comm_signer.nip4_decrypt_event(evt)
-
         try:
             cmd_dict = json.loads(decrypted_evt.content)
             if 'method' in cmd_dict and self._on_command:
@@ -141,13 +199,11 @@ class NIP46Comm(EventHandler, ABC):
                            id: str = None):
         if id is None:
             id = util_funcs.get_rnd_hex_str(8)
-
         evt = await self._get_msg_event(json.dumps({
             'id': id,
             'result': result,
             'error': error
         }), to_k)
-
         self._client.publish(evt)
 
     async def do_request(self, method: str, params: [str], to_k, id: str = None):
@@ -168,7 +224,7 @@ class NIP46Comm(EventHandler, ABC):
 
         return id
 
-    def run(self):
+    def run(self, on_status=None) -> ClientPool:
         self._run = True
 
         # make client obj that will actually do the comm
@@ -186,11 +242,18 @@ class NIP46Comm(EventHandler, ABC):
             asyncio.create_task(aconnect(my_client))
 
         self._client.set_on_connect(on_connect)
+        self._client.set_on_status(on_status)
         asyncio.create_task(self._client.run())
+
+        return self._client
 
     def end(self):
         self._run = False
         self._client.end()
+
+    @property
+    def client(self) -> ClientPool:
+        return self._client
 
     async def __aenter__(self):
         self.run()
@@ -208,14 +271,21 @@ class NIP46ServerConnection:
     def __init__(self,
                  signer: SignerInterface,
                  relay: [str],
-                 authoriser: NIP46AuthoriseInterface = None):
+                 authoriser: NIP46AuthoriseInterface = None,
+                 same_signer_for_comm: bool = True):
 
         # this is the key we'll sign as
         self._signer = signer
 
+        self._comm_sign = None
+        # it's probably better to use a rnd key for the signing comm but some services don't seem to
+        # like this
+        if same_signer_for_comm:
+            self._comm_sign = self._signer
+
         # this is the chanel we sign over
         self._comm = NIP46Comm(relay=relay,
-                               comm_signer=signer,
+                               comm_signer=self._comm_sign,
                                on_command=self._do_command)
 
         # called before we do any method
@@ -380,15 +450,21 @@ class NIP46ServerConnection:
 
         return ret
 
-    async def run(self):
+    async def run(self, on_status: callable = None) -> ClientPool:
         self._run = True
-        self._comm.run()
+        comm_client = self._comm.run(on_status=on_status)
         while self._run is True:
             await asyncio.sleep(0.1)
+        return comm_client
 
     def end(self):
         self._run = False
         self._comm.end()
+
+    @property
+    def client(self) -> ClientPool:
+        return self._comm.client
+
 
 
 class NIP4SignerEncrypter(Encrypter):
@@ -489,14 +565,14 @@ class NIP46Signer(SignerInterface):
     async def _do_method(self, method: str, args: list) -> str:
         logging.debug(f'NIP46Signer::_do_method: {method} - {args}')
 
-        to_k = self._sign_as_k
-        if method == 'connect' or to_k is None:
-            to_k = self._signer_k
+        # to_k = self._sign_as_k
+        # if method == 'connect' or to_k is None:
+        #     to_k = self._signer_k
 
         # did we already get key to connect on?
         return await self._comm.do_request(method=method,
                                            params=args,
-                                           to_k=to_k)
+                                           to_k=self._signer_k)
 
     async def _get_connect(self):
         if self._sign_as_k is None:
@@ -554,11 +630,16 @@ class NIP46Signer(SignerInterface):
         self._enc = NIP44SignerEncrypter(self)
         return await self._enc.adecrypt_event(evt)
 
-    def run(self):
-        self._comm.run()
+    def run(self, on_status: callable = None) -> ClientPool:
+        self._comm.run(on_status=on_status)
+        return self._comm.client
 
     def end(self):
         self._comm.end()
+
+    @property
+    def client(self) -> ClientPool:
+        return self._comm.client
 
     async def __aenter__(self):
         self._comm.run()

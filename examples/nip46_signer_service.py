@@ -17,9 +17,11 @@ async def run_signer():
 
     # create the signing service
     my_signer = NIP46ServerConnection(signer=BasicKeySigner(n_keys),
+                                      same_signer_for_comm=True,
                                       relay=RELAY)
 
     # output info needed for client to connect to the signer
+    print(f'signing as {n_keys.public_key_hex()}')
     print(await my_signer.bunker_url)
 
     # wait forever...
