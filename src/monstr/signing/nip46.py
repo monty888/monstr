@@ -110,7 +110,7 @@ class NIP46Comm(EventHandler, ABC):
         # events queued and dealt with serially as they come in
         self._event_q: asyncio.Queue = asyncio.Queue()
         # start a process to work on the queued events
-        self._event_process_task = asyncio.create_task(self._my_event_consumer())
+        self._event_process_task = None
 
         # called when we see method events - most likely when we're acting as signer
         self._on_command = on_command
@@ -243,6 +243,7 @@ class NIP46Comm(EventHandler, ABC):
 
         self._client.set_on_connect(on_connect)
         self._client.set_on_status(on_status)
+        asyncio.create_task(self._my_event_consumer())
         asyncio.create_task(self._client.run())
 
         return self._client
