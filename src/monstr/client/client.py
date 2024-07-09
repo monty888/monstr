@@ -331,7 +331,6 @@ class Client:
         try:
             self._on_auth(self, challenge)
         except Exception as e:
-            print(e)
             logging.debug(f'Client::_do_auth - error {e}')
 
     async def _my_producer(self, ws: aiohttp.ClientWebSocketResponse):
