@@ -101,7 +101,7 @@ import logging
 from monstr.client.client import Client, ClientPool
 from monstr.encrypt import Keys, NIP4Encrypt
 from monstr.event.event import Event
-from monstr.signing import BasicKeySigner
+from monstr.signing.signing import BasicKeySigner
 
 async def do_post(url, text):
     # rnd generate some keys
